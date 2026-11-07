@@ -171,39 +171,47 @@ export default function Services() {
               return (
                 <div
                   key={card.id}
-                  className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-7 shadow-xs hover:shadow-md hover:border-green-300 transition-all flex flex-col justify-between group"
+                  className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-xs hover:shadow-md hover:border-green-300 transition-all flex flex-col justify-between group"
                 >
                   <div>
-                    {/* Header: Icon, Badge, Price */}
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="w-14 h-14 rounded-2xl bg-green-50 border border-green-100 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                        {card.icon}
-                      </div>
-                      <div className="text-right flex flex-col items-end gap-1.5">
-                        {card.badge && (
-                          <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full">
-                            {card.badge}
-                          </span>
-                        )}
-                        <p className="text-xl font-black text-gray-900">
-                          {card.hourlyRateRange}
-                        </p>
+                    {/* Service Hero Image */}
+                    <div className="h-44 w-full bg-gray-100 overflow-hidden relative">
+                      {card.imageUrl ? (
+                        <img
+                          src={card.imageUrl}
+                          alt={card.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center text-4xl">
+                          {card.icon}
+                        </div>
+                      )}
+                      {card.badge && (
+                        <span className="absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider bg-white/95 backdrop-blur-xs text-green-900 border border-green-200 px-2.5 py-1 rounded-full shadow-xs">
+                          {card.badge}
+                        </span>
+                      )}
+                      <div className="absolute bottom-3 right-3 bg-gray-900/90 backdrop-blur-xs text-white text-xs font-black px-3 py-1.5 rounded-xl shadow-md">
+                        {card.hourlyRateRange}
                       </div>
                     </div>
 
-                    <h2 className="text-xl font-black text-gray-900 mb-1 group-hover:text-green-700 transition-colors">
-                      {card.name}
-                    </h2>
-                    <p className="text-xs font-semibold text-green-700 mb-3">
-                      {card.tagline}
-                    </p>
-                    <p className="text-xs text-gray-600 leading-relaxed mb-6">
-                      {card.description}
-                    </p>
+                    <div className="p-6">
+                      <h2 className="text-xl font-black text-gray-900 mb-1 group-hover:text-green-700 transition-colors">
+                        {card.name}
+                      </h2>
+                      <p className="text-xs font-semibold text-green-700 mb-3">
+                        {card.tagline}
+                      </p>
+                      <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                        {card.description}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Actions: View Details + Book Now */}
-                  <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <div className="px-6 pb-6 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
                     <Link
                       href={`/services/${card.primaryServiceId}`}
                       className="text-xs font-bold text-gray-600 hover:text-green-700 transition-colors inline-flex items-center gap-1"

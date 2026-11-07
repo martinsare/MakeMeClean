@@ -7,6 +7,7 @@ export interface ServiceCategoryCard {
   tagline: string;
   description: string;
   icon: string;
+  imageUrl?: string | null;
   primaryServiceId: string;
   hourlyRateRange: string;
   price?: number;
@@ -138,6 +139,20 @@ export function buildServiceCatalogFromDb(dbServices: Service[]): ServiceCategor
     const description = resolveCategoryDescription(catKey, primary);
     const icon = resolveServiceIcon(primary, catKey);
 
+    const imageUrl =
+      primary.image_url ||
+      (catKey === "domestic"
+        ? "/images/service-regular-cleaning.jpg"
+        : catKey === "deep"
+        ? "/images/service-deep-cleaning.jpg"
+        : catKey === "airbnb"
+        ? "/images/service-airbnb-cleaning.jpg"
+        : catKey === "ironing"
+        ? "/images/service-ironing-service.jpg"
+        : catKey === "commercial"
+        ? "/images/service-office-cleaning.jpg"
+        : null);
+
     cards.push({
       id: catKey,
       name,
@@ -145,6 +160,7 @@ export function buildServiceCatalogFromDb(dbServices: Service[]): ServiceCategor
       tagline,
       description,
       icon,
+      imageUrl,
       primaryServiceId: primary.id,
       hourlyRateRange: minPrice > 0 ? `From £${minPrice.toFixed(2)}/hr` : `£0.00/hr`,
       price: primary.price || minPrice,

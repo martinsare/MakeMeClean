@@ -853,37 +853,46 @@ export default function BookingPage() {
                       setSelectedExtras([]);
                       setStep(2);
                     }}
-                    className="p-6 rounded-3xl border-2 border-gray-200 bg-white hover:border-green-600 hover:shadow-lg transition-all text-left flex flex-col justify-between group relative overflow-hidden"
+                    className="rounded-3xl border-2 border-gray-200 bg-white hover:border-green-600 hover:shadow-lg transition-all text-left flex flex-col justify-between group relative overflow-hidden"
                   >
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="w-14 h-14 rounded-2xl bg-green-50 border border-green-100 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                        {group.icon}
-                      </div>
-                      <div className="flex flex-col items-end">
+                    <div>
+                      {/* Service Category Image */}
+                      <div className="h-36 w-full bg-gray-100 overflow-hidden relative">
+                        {group.imageUrl ? (
+                          <img
+                            src={group.imageUrl}
+                            alt={group.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center text-4xl">
+                            {group.icon}
+                          </div>
+                        )}
                         {group.badge && (
-                          <span className="bg-green-100 text-green-800 text-[11px] font-black px-2.5 py-0.5 rounded-full mb-1">
+                          <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs text-green-900 border border-green-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-xs">
                             {group.badge}
                           </span>
                         )}
-                        <span className="text-sm font-black text-green-700">
+                        <span className="absolute bottom-3 right-3 bg-gray-900/90 backdrop-blur-xs text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-sm">
                           {group.hourlyRateRange}
                         </span>
                       </div>
+
+                      <div className="p-6">
+                        <h3 className="text-lg font-black text-gray-900 group-hover:text-green-700 transition-colors">
+                          {group.name}
+                        </h3>
+                        <p className="text-xs font-semibold text-green-700 mt-0.5">
+                          {group.tagline}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                          {group.description}
+                        </p>
+                      </div>
                     </div>
 
-                    <div>
-                      <h3 className="text-lg font-black text-gray-900 group-hover:text-green-700 transition-colors">
-                        {group.name}
-                      </h3>
-                      <p className="text-xs font-semibold text-green-700 mt-0.5">
-                        {group.tagline}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                        {group.description}
-                      </p>
-                    </div>
-
-                    <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-green-700">
+                    <div className="px-6 pb-6 pt-2 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-green-700">
                       <span>Select service</span>
                       <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                     </div>
