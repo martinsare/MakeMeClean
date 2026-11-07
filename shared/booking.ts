@@ -92,18 +92,18 @@ export const DEFAULT_BOOKING_EXTRAS: BookingExtra[] = [
     desc: "Shirts, linens & folding",
   },
   {
-    id: "carpet",
-    label: "Carpet Stain Extraction",
-    icon: "🧹",
-    duration: 1,
-    desc: "Hot water shampoo machine",
-  },
-  {
     id: "cupboards",
     label: "Inside Kitchen Cabinets",
     icon: "📦",
     duration: 0.75,
     desc: "Shelves wiped & sanitized",
+  },
+  {
+    id: "bed_linen",
+    label: "Bed Linen Change",
+    icon: "🛏️",
+    duration: 0.5,
+    desc: "Fresh bedsheets changed & made up",
   },
 ];
 
