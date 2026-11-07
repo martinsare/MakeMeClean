@@ -610,6 +610,26 @@ export default function AdminServices() {
                   <p className="text-base font-bold text-gray-900 leading-snug">
                     {s.name}
                   </p>
+                  <div>
+                    <p className="text-base font-bold text-gray-900 leading-snug">
+                      {s.name}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                        {s.category === "domestic" && "Classic Domestic"}
+                        {s.category === "deep" && "Deep Cleaning"}
+                        {s.category === "airbnb" && "Airbnb Turnover"}
+                        {s.category === "ironing" && "Ironing & Laundry"}
+                        {s.category === "commercial" && "Commercial & Office"}
+                        {!["domestic", "deep", "airbnb", "ironing", "commercial"].includes(s.category ?? "") && (s.category || "General")}
+                      </span>
+                      {s.badge && (
+                        <span className="text-[10px] font-semibold text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
+                          {s.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <div className="flex gap-1 shrink-0">
                     {s.popular && (
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
