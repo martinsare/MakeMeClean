@@ -23483,6 +23483,107 @@ async function handleNotifications(req, res) {
   return sendError(res, "Method not allowed", 405);
 }
 
+// server/_handlers/staff.ts
+function randomPassword(length = 14) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return out;
+}
+async function handleStaff(req, res) {
+  if (req.method !== "POST") {
+    return sendError(res, "Method not allowed", 405);
+  }
+  const { user, error: authErr } = await verifyAuth(req);
+  if (authErr || !user) {
+    return sendError(res, authErr || "Unauthorized", 401);
+  }
+  const supabase = getServerSupabase();
+  const { data: adminRow } = await supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+  if (!adminRow) {
+    return sendError(res, "Forbidden: Admin access required", 403);
+  }
+  const body = req.body || {};
+  const {
+    first_name,
+    last_name,
+    email,
+    phone,
+    city,
+    postcode,
+    role = "Cleaner",
+    active = true,
+    create_login = true
+  } = body;
+  const cleanFirstName = String(first_name || "").trim();
+  const cleanLastName = String(last_name || "").trim();
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanPhone = phone ? String(phone).trim() : null;
+  const cleanCity = city ? String(city).trim() : null;
+  const cleanPostcode = postcode ? String(postcode).trim() : null;
+  const cleanRole = String(role || "Cleaner").trim();
+  if (!cleanFirstName || !cleanLastName || !cleanEmail) {
+    return sendError(res, "First name, last name, and a valid email are required", 400);
+  }
+  const { data: existingStaff } = await supabase.from("staff").select("id, email").eq("email", cleanEmail).maybeSingle();
+  if (existingStaff) {
+    return sendError(res, `A staff member with email "${cleanEmail}" already exists`, 409);
+  }
+  let authUserId = null;
+  let tempPassword = "";
+  if (create_login) {
+    tempPassword = randomPassword();
+    const { data: createdUser, error: createErr } = await supabase.auth.admin.createUser({
+      email: cleanEmail,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: {
+        must_change_password: true,
+        staff_role: cleanRole,
+        full_name: `${cleanFirstName} ${cleanLastName}`
+      }
+    });
+    if (createErr) {
+      const alreadyRegistered = createErr.message?.toLowerCase().includes("already registered") || createErr.message?.toLowerCase().includes("already exists") || createErr.status === 422;
+      if (!alreadyRegistered) {
+        return sendError(res, `Failed to create staff account: ${createErr.message}`, 500);
+      }
+      const { data: listData } = await supabase.auth.admin.listUsers();
+      const existingUser = (listData?.users || []).find(
+        (u) => u.email?.toLowerCase() === cleanEmail
+      );
+      if (existingUser) {
+        authUserId = existingUser.id;
+        tempPassword = "";
+      }
+    } else if (createdUser?.user?.id) {
+      authUserId = createdUser.user.id;
+    }
+  }
+  const { data: newStaff, error: insertErr } = await supabase.from("staff").insert({
+    first_name: cleanFirstName,
+    last_name: cleanLastName,
+    email: cleanEmail,
+    phone: cleanPhone,
+    city: cleanCity,
+    postcode: cleanPostcode,
+    role: cleanRole,
+    active: Boolean(active),
+    user_id: authUserId
+  }).select().single();
+  if (insertErr) {
+    return sendError(res, `Failed to save staff record: ${insertErr.message}`, 500);
+  }
+  return sendJson(res, {
+    success: true,
+    staff: newStaff,
+    tempPassword: tempPassword || void 0,
+    message: tempPassword ? `Staff member created with temporary login password: ${tempPassword}` : "Staff member created successfully."
+  });
+}
+
 // server/index.ts
 async function handler(req, res) {
   if (handleCors(req, res)) return;
@@ -23526,6 +23627,8 @@ async function handler(req, res) {
         return await handleContact(req, res);
       case "notifications":
         return await handleNotifications(req, res);
+      case "staff":
+        return await handleStaff(req, res);
       default:
         return sendError(res, `API route not found: /api/${path}`, 404);
     }
