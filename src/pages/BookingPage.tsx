@@ -416,7 +416,30 @@ export default function BookingPage() {
   }, [user]);
 
   const minDate = new Date();
-  const minDateStr = minDate.toISOString().split("T")[0];
+  // Format local date string (YYYY-MM-DD) avoiding UTC offset skew
+  const localTodayStr = `${minDate.getFullYear()}-${String(
+    minDate.getMonth() + 1
+  ).padStart(2, "0")}-${String(minDate.getDate()).padStart(2, "0")}`;
+
+  // Calculate if there are still daytime slots left today (latest start hour is 17:00)
+  const currentHour = minDate.getHours();
+  const currentMinute = minDate.getMinutes();
+  const remainingTodaySlots = START_HOURS.filter((h) => {
+    const [hHour, hMin] = h.split(":").map(Number);
+    return (
+      hHour > currentHour || (hHour === currentHour && hMin > currentMinute)
+    );
+  });
+
+  // If today has already passed 17:00 (no daytime slots remaining), min selectable date moves to tomorrow
+  const minSelectableDate = new Date();
+  if (remainingTodaySlots.length === 0) {
+    minSelectableDate.setDate(minSelectableDate.getDate() + 1);
+  }
+  const minDateStr = `${minSelectableDate.getFullYear()}-${String(
+    minSelectableDate.getMonth() + 1
+  ).padStart(2, "0")}-${String(minSelectableDate.getDate()).padStart(2, "0")}`;
+
   const baseHourlyPrice = selectedService?.price ?? 20;
   const svcDiscount = Math.max(
     0,
@@ -432,11 +455,16 @@ export default function BookingPage() {
     recurringPct > 0 ? totalPrice * (1 - recurringPct / 100) : totalPrice;
   const timeSlot = calcTimeSlot(startHour, durationHours);
   const availableStartHours =
-    date === minDateStr
-      ? START_HOURS.filter(
-          (h) => new Date(`${date}T${h}:00`).getTime() > Date.now()
-        )
+    date === localTodayStr && remainingTodaySlots.length > 0
+      ? remainingTodaySlots
       : START_HOURS;
+
+  // Initialize date to min selectable date if blank or before min date
+  useEffect(() => {
+    if (!date || date < minDateStr) {
+      setDate(minDateStr);
+    }
+  }, [minDateStr, date]);
 
   useEffect(() => {
     if (
