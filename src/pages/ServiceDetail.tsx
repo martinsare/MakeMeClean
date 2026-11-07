@@ -114,7 +114,9 @@ export default function ServiceDetail() {
     bookingParams.set("livingRooms", String(currentDurationObj.living));
   if (currentDurationObj?.propertyType)
     bookingParams.set("propertyType", currentDurationObj.propertyType);
-  const bookLink = /book/;
+  const bookUrl = `/book/${service.id}${
+    bookingParams.toString() ? `?${bookingParams.toString()}` : ""
+  }`;
 
   return (
     <div className="min-h-screen bg-gray-50/60 pb-20">
@@ -192,7 +194,7 @@ export default function ServiceDetail() {
                 </div>
 
                 <Link
-                  href={`/book/${service.id}`}
+                  href={bookUrl}
                   className="btn-primary py-4 px-8 text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-600/20 w-full sm:w-auto"
                 >
                   Book This Clean <ArrowRight className="w-4 h-4" />
@@ -286,7 +288,7 @@ export default function ServiceDetail() {
               </div>
             </div>
             <Link
-              href={`/book/${service.id}`}
+              href={bookUrl}
               className="btn-primary text-xs py-3 px-6 shrink-0"
             >
               Continue to Booking
