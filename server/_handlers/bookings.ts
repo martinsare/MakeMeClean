@@ -105,6 +105,26 @@ export async function handleBookings(
     }
 
     if (method === 'POST') {
+      // Check if bookings are currently paused/disabled by admin
+      const { data: bookingEnabledSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'booking_enabled')
+        .maybeSingle();
+
+      if (bookingEnabledSetting?.value === 'false') {
+        const { data: bookingMessageSetting } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('key', 'booking_disabled_message')
+          .maybeSingle();
+
+        const disabledMsg =
+          bookingMessageSetting?.value?.trim() ||
+          'We are currently fully booked and temporarily not accepting new bookings. Please try again later.';
+        return sendError(res, disabledMsg, 403);
+      }
+
       const body = req.body || {};
       const {
         serviceId,

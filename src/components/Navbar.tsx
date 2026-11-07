@@ -28,6 +28,7 @@ export default function Navbar() {
   const { isAdmin } = useIsAdmin(user?.id);
   const settings = useSettings();
   const loyaltyEnabled = settings.loyalty_enabled === "true";
+  const bookingEnabled = settings.booking_enabled !== "false";
   const isStaff = Boolean(staff);
 
   useEffect(() => {
@@ -103,7 +104,14 @@ export default function Navbar() {
               >
                 {link.label}
                 {link.href === "/book" && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span
+                    className={cn(
+                      "absolute -top-1 -right-1 w-2 h-2 rounded-full",
+                      bookingEnabled
+                        ? "bg-green-500 animate-pulse"
+                        : "bg-amber-400"
+                    )}
+                  />
                 )}
               </Link>
             ))}

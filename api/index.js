@@ -22508,7 +22508,9 @@ async function handleSettings(req, res) {
       email_recruitment: "recruitment@makemeclean.co.uk",
       email_payment: "payment@makemeclean.co.uk",
       email_payroll: "payroll@makemeclean.co.uk",
-      loyalty_enabled: "false"
+      loyalty_enabled: "false",
+      booking_enabled: "true",
+      booking_disabled_message: "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly."
     };
     const supabase = getServerSupabase();
     const { data, error } = await supabase.from("settings").select("key, value");
@@ -22786,6 +22788,12 @@ async function handleBookings(req, res, subPath, params = {}) {
       return sendSuccess(res, items);
     }
     if (method === "POST") {
+      const { data: bookingEnabledSetting } = await supabase.from("settings").select("value").eq("key", "booking_enabled").maybeSingle();
+      if (bookingEnabledSetting?.value === "false") {
+        const { data: bookingMessageSetting } = await supabase.from("settings").select("value").eq("key", "booking_disabled_message").maybeSingle();
+        const disabledMsg = bookingMessageSetting?.value?.trim() || "We are currently fully booked and temporarily not accepting new bookings. Please try again later.";
+        return sendError(res, disabledMsg, 403);
+      }
       const body = req.body || {};
       const {
         serviceId,

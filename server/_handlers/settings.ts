@@ -18,6 +18,8 @@ export async function handleSettings(req: VercelRequest, res: VercelResponse) {
       email_payment: 'payment@makemeclean.co.uk',
       email_payroll: 'payroll@makemeclean.co.uk',
       loyalty_enabled: 'false',
+      booking_enabled: 'true',
+      booking_disabled_message: 'We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly.',
     };
 
     const supabase = getServerSupabase();

@@ -14,6 +14,8 @@ import {
   Trash2,
   Plus,
   Home,
+  Power,
+  CalendarX,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useRole";
@@ -930,6 +932,196 @@ function ServiceCitiesManagement() {
   );
 }
 
+function BookingAvailabilityControl() {
+  const [enabled, setEnabled] = useState(true);
+  const [message, setMessage] = useState(
+    "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly."
+  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("settings")
+      .select("key, value")
+      .in("key", ["booking_enabled", "booking_disabled_message"])
+      .then(({ data }) => {
+        const map = new Map<string, string>();
+        for (const row of data || []) {
+          map.set(row.key, row.value);
+        }
+        if (map.has("booking_enabled")) {
+          setEnabled(map.get("booking_enabled") !== "false");
+        }
+        if (map.has("booking_disabled_message")) {
+          setMessage(map.get("booking_disabled_message") || "");
+        }
+        setLoading(false);
+      });
+  }, []);
+
+  const handleToggle = async (newVal: boolean) => {
+    setSaving(true);
+    setEnabled(newVal);
+    await supabase.from("settings").upsert(
+      [
+        {
+          key: "booking_enabled",
+          value: newVal ? "true" : "false",
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: "key" }
+    );
+    invalidateSettingsCache();
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleSaveMessage = async () => {
+    setSaving(true);
+    await supabase.from("settings").upsert(
+      [
+        {
+          key: "booking_disabled_message",
+          value: message,
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: "key" }
+    );
+    invalidateSettingsCache();
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+      <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+              enabled
+                ? "bg-emerald-50 border-emerald-100 text-emerald-600"
+                : "bg-rose-50 border-rose-100 text-rose-600"
+            }`}
+          >
+            <Power className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-black text-gray-900">
+              Booking Availability Control
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Turn customer bookings on or off whenever you are unavailable or
+              at full capacity
+            </p>
+          </div>
+        </div>
+        <span
+          className={`text-xs font-bold px-3 py-1 rounded-full border ${
+            enabled
+              ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+              : "text-rose-700 bg-rose-50 border-rose-200"
+          }`}
+        >
+          {enabled ? "Accepting Bookings" : "Bookings Paused"}
+        </span>
+      </div>
+
+      <div className="p-6">
+        {loading ? (
+          <div className="py-4 flex justify-center">
+            <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div
+              className={`flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap p-4 rounded-xl border ${
+                enabled
+                  ? "bg-emerald-50/50 border-emerald-100"
+                  : "bg-rose-50/50 border-rose-100"
+              }`}
+            >
+              <div>
+                <p className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      enabled ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                    }`}
+                  />
+                  {enabled
+                    ? "Customer bookings are currently OPEN"
+                    : "Customer bookings are currently PAUSED"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {enabled
+                    ? "Customers across Wales can view available dates and book cleaning appointments normally."
+                    : "The booking form will show a clear paused announcement to customers, preventing anyone from booking."}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleToggle(!enabled)}
+                disabled={saving}
+                className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all shadow-sm shrink-0 flex items-center gap-2 ${
+                  enabled
+                    ? "bg-rose-600 text-white hover:bg-rose-700"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700"
+                }`}
+              >
+                {saving ? (
+                  "Updating..."
+                ) : saved ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> Updated!
+                  </>
+                ) : enabled ? (
+                  <>
+                    <CalendarX className="w-4 h-4" /> Pause Bookings
+                  </>
+                ) : (
+                  <>
+                    <Power className="w-4 h-4" /> Resume Bookings
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Custom message for customers when paused */}
+            <div className="border border-gray-100 rounded-xl p-4 bg-gray-50 space-y-2">
+              <label className="block text-xs font-bold text-gray-700">
+                Notice displayed to customers when bookings are paused:
+              </label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={2}
+                placeholder="Notice to customers when paused..."
+                className="w-full border border-gray-200 rounded-xl p-3 text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveMessage}
+                  disabled={saving}
+                  className="px-4 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Save Notice Text
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LoyaltyProgramToggle() {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1283,6 +1475,9 @@ export default function AdminSettings() {
               </p>
             </div>
           </div>
+
+          {/* Booking Availability On/Off Switch */}
+          <BookingAvailabilityControl />
 
           {/* Customer Loyalty Toggle */}
           <LoyaltyProgramToggle />

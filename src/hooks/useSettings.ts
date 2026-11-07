@@ -2,8 +2,12 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 // All settings are admin-managed in database via /admin/settings
-// No hardcoded defaults — admins must configure everything
-export const SETTING_DEFAULTS: Record<string, string> = {};
+// Sensible fallback defaults if DB is temporarily unreachable
+export const SETTING_DEFAULTS: Record<string, string> = {
+  booking_enabled: "true",
+  booking_disabled_message:
+    "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly.",
+};
 
 // Module-level cache so every component shares one fetch per session
 let _cache: Record<string, string> | null = null;
