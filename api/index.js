@@ -22149,18 +22149,18 @@ var DEFAULT_BOOKING_EXTRAS = [
     desc: "Shirts, linens & folding"
   },
   {
-    id: "carpet",
-    label: "Carpet Stain Extraction",
-    icon: "\u{1F9F9}",
-    duration: 1,
-    desc: "Hot water shampoo machine"
-  },
-  {
     id: "cupboards",
     label: "Inside Kitchen Cabinets",
     icon: "\u{1F4E6}",
     duration: 0.75,
     desc: "Shelves wiped & sanitized"
+  },
+  {
+    id: "bed_linen",
+    label: "Bed Linen Change",
+    icon: "\u{1F6CF}\uFE0F",
+    duration: 0.5,
+    desc: "Fresh bedsheets changed & made up"
   }
 ];
 function parseBookingExtras(value) {

@@ -241,13 +241,23 @@ function getMatureTaskIcon(title: string, category: string) {
   if (t.includes("sink") || t.includes("tap") || t.includes("descal")) {
     return <Droplets className="w-4 h-4 text-cyan-700" />;
   }
-  if (t.includes("bath") || t.includes("toilet") || t.includes("shower") || category === "bathrooms") {
+  if (
+    t.includes("bath") ||
+    t.includes("toilet") ||
+    t.includes("shower") ||
+    category === "bathrooms"
+  ) {
     return <Bath className="w-4 h-4 text-sky-700" />;
   }
   if (t.includes("bed") || category === "bedrooms") {
     return <Bed className="w-4 h-4 text-indigo-700" />;
   }
-  if (t.includes("living") || t.includes("lounge") || t.includes("sofa") || category === "living") {
+  if (
+    t.includes("living") ||
+    t.includes("lounge") ||
+    t.includes("sofa") ||
+    category === "living"
+  ) {
     return <Armchair className="w-4 h-4 text-emerald-700" />;
   }
   if (t.includes("vacuum") || t.includes("mop") || t.includes("floor")) {
@@ -2013,15 +2023,12 @@ export default function BookingPage() {
                   livingRooms,
                   extras: selectedExtras,
                   propertyType,
-                  equipmentBroughtByCleaner: cleanerBringsVacuum,
                   equipmentBroughtByCleaner: false,
                 }).map((task, idx) => (
                   <div
                     key={idx}
                     className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-start gap-2.5"
                   >
-                    <span className="text-base shrink-0 mt-0.5">
-                      {task.icon}
                     <span className="w-7 h-7 rounded-lg bg-white border border-gray-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
                       {getMatureTaskIcon(task.title, task.category)}
                     </span>
@@ -2104,10 +2111,11 @@ export default function BookingPage() {
                 <div className="pt-2 border-t border-gray-200 text-xs">
                   <span className="text-gray-400">Selected Extras: </span>
                   <span className="font-bold text-gray-800">
-                    {selectedExtras.join(", ")}
                     {selectedExtras
                       .map((extraId) => {
-                        const found = currentAvailableExtras.find((e) => e.id === extraId);
+                        const found = currentAvailableExtras.find(
+                          (e) => e.id === extraId
+                        );
                         return found ? found.label : extraId;
                       })
                       .join(", ")}
