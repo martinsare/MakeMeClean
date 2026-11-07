@@ -607,9 +607,6 @@ export default function AdminServices() {
               </div>
               <div className="p-5">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <p className="text-base font-bold text-gray-900 leading-snug">
-                    {s.name}
-                  </p>
                   <div>
                     <p className="text-base font-bold text-gray-900 leading-snug">
                       {s.name}
@@ -621,7 +618,14 @@ export default function AdminServices() {
                         {s.category === "airbnb" && "Airbnb Turnover"}
                         {s.category === "ironing" && "Ironing & Laundry"}
                         {s.category === "commercial" && "Commercial & Office"}
-                        {!["domestic", "deep", "airbnb", "ironing", "commercial"].includes(s.category ?? "") && (s.category || "General")}
+                        {![
+                          "domestic",
+                          "deep",
+                          "airbnb",
+                          "ironing",
+                          "commercial",
+                        ].includes(s.category ?? "") &&
+                          (s.category || "General")}
                       </span>
                       {s.badge && (
                         <span className="text-[10px] font-semibold text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
