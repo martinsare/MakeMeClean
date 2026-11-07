@@ -129,19 +129,42 @@ function clearDraft() {
 
 function getMatureRoomIcon(iconEmoji: string, label: string) {
   const text = (label || "").toLowerCase();
-  if (text.includes("bed") || text.includes("linen") || iconEmoji.includes("🛏")) {
+  if (
+    text.includes("bed") ||
+    text.includes("linen") ||
+    iconEmoji.includes("🛏")
+  ) {
     return <Bed className="w-4 h-4 text-emerald-700" />;
   }
-  if (text.includes("bath") || text.includes("wc") || text.includes("washroom") || iconEmoji.includes("🚿") || iconEmoji.includes("🚻")) {
+  if (
+    text.includes("bath") ||
+    text.includes("wc") ||
+    text.includes("washroom") ||
+    iconEmoji.includes("🚿") ||
+    iconEmoji.includes("🚻")
+  ) {
     return <Bath className="w-4 h-4 text-emerald-700" />;
   }
-  if (text.includes("living") || text.includes("lounge") || text.includes("sofa") || iconEmoji.includes("🛋")) {
+  if (
+    text.includes("living") ||
+    text.includes("lounge") ||
+    text.includes("sofa") ||
+    iconEmoji.includes("🛋")
+  ) {
     return <Armchair className="w-4 h-4 text-emerald-700" />;
   }
-  if (text.includes("laundry") || text.includes("ironing") || iconEmoji.includes("🧺")) {
+  if (
+    text.includes("laundry") ||
+    text.includes("ironing") ||
+    iconEmoji.includes("🧺")
+  ) {
     return <Shirt className="w-4 h-4 text-emerald-700" />;
   }
-  if (text.includes("desk") || text.includes("office") || iconEmoji.includes("🖥")) {
+  if (
+    text.includes("desk") ||
+    text.includes("office") ||
+    iconEmoji.includes("🖥")
+  ) {
     return <Tv className="w-4 h-4 text-emerald-700" />;
   }
   return <Home className="w-4 h-4 text-emerald-700" />;
@@ -161,22 +184,46 @@ function getMatureExtraIcon(extraId: string, label: string) {
   if (key.includes("linen") || key.includes("bed")) {
     return <Bed className="w-5 h-5 text-indigo-600" />;
   }
-  if (key.includes("ironing") || key.includes("laundry") || key.includes("wash")) {
+  if (
+    key.includes("ironing") ||
+    key.includes("laundry") ||
+    key.includes("wash")
+  ) {
     return <Shirt className="w-5 h-5 text-purple-600" />;
   }
-  if (key.includes("carpet") || key.includes("shampoo") || key.includes("extraction")) {
+  if (
+    key.includes("carpet") ||
+    key.includes("shampoo") ||
+    key.includes("extraction")
+  ) {
     return <Layers className="w-5 h-5 text-emerald-600" />;
   }
-  if (key.includes("cabinet") || key.includes("cupboard") || key.includes("storage")) {
+  if (
+    key.includes("cabinet") ||
+    key.includes("cupboard") ||
+    key.includes("storage")
+  ) {
     return <Package className="w-5 h-5 text-amber-700" />;
   }
-  if (key.includes("coffee") || key.includes("welcome") || key.includes("kitchenette")) {
+  if (
+    key.includes("coffee") ||
+    key.includes("welcome") ||
+    key.includes("kitchenette")
+  ) {
     return <Coffee className="w-5 h-5 text-amber-800" />;
   }
-  if (key.includes("photo") || key.includes("audit") || key.includes("report")) {
+  if (
+    key.includes("photo") ||
+    key.includes("audit") ||
+    key.includes("report")
+  ) {
     return <Camera className="w-5 h-5 text-blue-600" />;
   }
-  if (key.includes("bin") || key.includes("waste") || key.includes("recycling")) {
+  if (
+    key.includes("bin") ||
+    key.includes("waste") ||
+    key.includes("recycling")
+  ) {
     return <Trash2 className="w-5 h-5 text-slate-600" />;
   }
   return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
@@ -1187,19 +1234,18 @@ export default function BookingPage() {
               {/* Field 1 */}
               <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                    <span className="text-base">
-                      {bookingConfig.field1.icon}
-                    </span>{" "}
-                    {bedroomLabel}
                   <div className="text-xs font-bold text-gray-900 flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                      {getMatureRoomIcon(bookingConfig.field1.icon, bedroomLabel)}
+                      {getMatureRoomIcon(
+                        bookingConfig.field1.icon,
+                        bedroomLabel
+                      )}
                     </span>
                     <span>{bedroomLabel}</span>
                   </div>
-                  <div className="text-[10px] text-gray-400">{bedroomHint}</div>
-                  <div className="text-[10px] text-gray-400 mt-1">{bedroomHint}</div>
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    {bedroomHint}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1241,18 +1287,15 @@ export default function BookingPage() {
               {/* Field 2 */}
               <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                    <span className="text-base">
-                      {bookingConfig.field2.icon}
-                    </span>{" "}
-                    {bathroomLabel}
                   <div className="text-xs font-bold text-gray-900 flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                      {getMatureRoomIcon(bookingConfig.field2.icon, bathroomLabel)}
+                      {getMatureRoomIcon(
+                        bookingConfig.field2.icon,
+                        bathroomLabel
+                      )}
                     </span>
                     <span>{bathroomLabel}</span>
                   </div>
-                  <div className="text-[10px] text-gray-400">
                   <div className="text-[10px] text-gray-400 mt-1">
                     {bathroomHint}
                   </div>
@@ -1297,18 +1340,15 @@ export default function BookingPage() {
               {/* Field 3 */}
               <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                    <span className="text-base">
-                      {bookingConfig.field3.icon}
-                    </span>{" "}
-                    {livingAreaLabel}
                   <div className="text-xs font-bold text-gray-900 flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                      {getMatureRoomIcon(bookingConfig.field3.icon, livingAreaLabel)}
+                      {getMatureRoomIcon(
+                        bookingConfig.field3.icon,
+                        livingAreaLabel
+                      )}
                     </span>
                     <span>{livingAreaLabel}</span>
                   </div>
-                  <div className="text-[10px] text-gray-400">
                   <div className="text-[10px] text-gray-400 mt-1">
                     {livingAreaHint}
                   </div>
@@ -1371,8 +1411,6 @@ export default function BookingPage() {
                           : "border-gray-200 bg-white hover:border-gray-300"
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-lg">{extra.icon}</span>
                       <div className="flex items-center justify-between mb-2">
                         <span className="w-8 h-8 rounded-xl bg-gray-100/90 border border-gray-200/60 flex items-center justify-center">
                           {getMatureExtraIcon(extra.id, extra.label)}
