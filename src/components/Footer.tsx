@@ -27,7 +27,7 @@ export default function Footer() {
               <img
                 src="/logo-dark.png"
                 alt="MakeMeClean"
-                className="h-9 w-auto max-w-[200px] object-contain rounded-lg"
+                className="h-10 md:h-11 w-auto max-w-[240px] object-contain"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = logoUrl;
                 }}

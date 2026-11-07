@@ -76,7 +76,7 @@ export default function Navbar() {
             <img
               src="/logo-horizontal.png"
               alt="MakeMeClean"
-              className="h-9 w-auto max-w-[210px] object-contain rounded-lg"
+              className="h-10 md:h-11 w-auto max-w-[240px] object-contain"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
                 target.src = "/logo.png";
