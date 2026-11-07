@@ -1409,6 +1409,9 @@ export default function AdminSettings() {
             </div>
           )}
 
+          {/* Booking Availability On/Off Switch - Placed right at the TOP */}
+          <BookingAvailabilityControl />
+
           {sections.map((section) => (
             <div
               key={section.title}
@@ -1475,9 +1478,6 @@ export default function AdminSettings() {
               </p>
             </div>
           </div>
-
-          {/* Booking Availability On/Off Switch */}
-          <BookingAvailabilityControl />
 
           {/* Customer Loyalty Toggle */}
           <LoyaltyProgramToggle />

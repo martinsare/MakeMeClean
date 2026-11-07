@@ -19,6 +19,7 @@ import {
   Dog,
   ChevronDown,
   ChevronUp,
+  Power,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -159,6 +160,8 @@ export default function AdminPanel() {
   const [expandedBookingIds, setExpandedBookingIds] = useState<
     Record<string, boolean>
   >({});
+  const [bookingEnabled, setBookingEnabled] = useState(true);
+  const [togglingBookingStatus, setTogglingBookingStatus] = useState(false);
 
   // Assign modal
   const [assignModal, setAssignModal] = useState<{ booking: Booking } | null>(
@@ -226,7 +229,33 @@ export default function AdminPanel() {
     const aMap: Record<string, string> = {};
     for (const a of aData ?? []) aMap[a.booking_id] = a.staff_id;
     setAssignments(aMap);
+
+    // Fetch booking enabled status
+    const { data: bookingEnabledSetting } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "booking_enabled")
+      .maybeSingle();
+    if (bookingEnabledSetting) {
+      setBookingEnabled(bookingEnabledSetting.value !== "false");
+    }
+
     setFetching(false);
+  };
+
+  const toggleBookingAvailability = async () => {
+    const nextVal = !bookingEnabled;
+    setTogglingBookingStatus(true);
+    setBookingEnabled(nextVal);
+    await supabase.from("settings").upsert(
+      {
+        key: "booking_enabled",
+        value: nextVal ? "true" : "false",
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" }
+    );
+    setTogglingBookingStatus(false);
   };
 
   useEffect(() => {
@@ -482,12 +511,35 @@ export default function AdminPanel() {
       title="Bookings"
       subtitle="Manage all customer bookings"
       actions={
-        <button
-          onClick={exportCSV}
-          className="btn-primary flex items-center gap-2 text-sm"
-        >
-          <Download className="w-4 h-4" /> Export CSV
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={toggleBookingAvailability}
+            disabled={togglingBookingStatus}
+            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all shadow-sm ${
+              bookingEnabled
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 animate-pulse"
+            }`}
+            title={
+              bookingEnabled
+                ? "Bookings are active. Click to pause customer bookings."
+                : "Bookings are paused. Click to resume bookings."
+            }
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Bookings:</span>
+            <span>
+              {bookingEnabled ? "Accepting (Turn Off)" : "PAUSED (Turn On)"}
+            </span>
+          </button>
+          <button
+            onClick={exportCSV}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+        </div>
       }
     >
       {/* Assign modal */}
@@ -538,7 +590,10 @@ export default function AdminPanel() {
                 <div className="flex gap-2 text-gray-700 font-medium pt-2 border-t border-gray-200/60">
                   <Home className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
                   <span>
-                    {getServiceBookingConfig(assignModal.booking.service_type || assignModal.booking.service_name).formatLayout(
+                    {getServiceBookingConfig(
+                      assignModal.booking.service_type ||
+                        assignModal.booking.service_name
+                    ).formatLayout(
                       assignModal.booking.bedrooms,
                       assignModal.booking.bathrooms,
                       assignModal.booking.living_rooms,
@@ -805,12 +860,15 @@ export default function AdminPanel() {
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                          {getServiceBookingConfig(b.service_type || b.service_name).formatLayout(
+                          {getServiceBookingConfig(
+                            b.service_type || b.service_name
+                          ).formatLayout(
                             b.bedrooms,
                             b.bathrooms,
                             b.living_rooms,
                             b.property_type
-                          )} · {b.duration_hours || 2}h
+                          )}{" "}
+                          · {b.duration_hours || 2}h
                         </span>
                       </div>
                     </div>
@@ -983,7 +1041,14 @@ export default function AdminPanel() {
                         <div className="space-y-1.5 bg-white p-3 rounded-xl border border-gray-100 shadow-2xs">
                           <div className="flex items-center gap-1.5 font-bold text-gray-800 pb-1 border-b border-gray-100">
                             <Home className="w-3.5 h-3.5 text-green-600" />
-                            <span>{getServiceBookingConfig(b.service_type || b.service_name).propertyTypeLabel} & Scale</span>
+                            <span>
+                              {
+                                getServiceBookingConfig(
+                                  b.service_type || b.service_name
+                                ).propertyTypeLabel
+                              }{" "}
+                              & Scale
+                            </span>
                           </div>
                           <p className="text-gray-600">
                             Type:{" "}
@@ -994,7 +1059,9 @@ export default function AdminPanel() {
                           <p className="text-gray-600">
                             Scale:{" "}
                             <span className="font-semibold text-gray-900">
-                              {getServiceBookingConfig(b.service_type || b.service_name).formatLayout(
+                              {getServiceBookingConfig(
+                                b.service_type || b.service_name
+                              ).formatLayout(
                                 b.bedrooms,
                                 b.bathrooms,
                                 b.living_rooms,
