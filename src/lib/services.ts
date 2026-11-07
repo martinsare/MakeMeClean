@@ -26,6 +26,7 @@ export interface Service {
   image_url?: string | null;
   discount_percent?: number;
   popular?: boolean;
+  active?: boolean;
   category?: string;
   badge?: string;
   tagline?: string;
@@ -43,6 +44,7 @@ export function mapDbService(s: DbService): Service {
     image_url: s.image_url ?? null,
     discount_percent: Number.isFinite(discount) ? discount : 0,
     popular: Boolean(s.popular),
+    active: s.active !== false,
     category: s.category || undefined,
     badge: s.badge || undefined,
     tagline: s.tagline || undefined,

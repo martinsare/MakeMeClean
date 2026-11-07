@@ -86,6 +86,8 @@ export default function ReviewPage() {
   const [friendliness, setFriendliness] = useState(0);
   const [valueForMoney, setValueForMoney] = useState(0);
   const [recommend, setRecommend] = useState<boolean | null>(null);
+  const [tipAmount, setTipAmount] = useState<number | null>(null);
+  const [customTip, setCustomTip] = useState("");
   const [comments, setComments] = useState("");
 
   useEffect(() => {

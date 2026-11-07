@@ -187,7 +187,7 @@ function getMatureExtraIcon(extraId: string, label: string) {
   }
   if (key.includes("linen") || key.includes("bed")) {
     return <Bed className="w-5 h-5 text-indigo-600" />;
-   }
+  }
   if (
     key.includes("ironing") ||
     key.includes("laundry") ||
@@ -607,12 +607,12 @@ export default function BookingPage() {
         }
 
         const newMults =
-          parseDurationMultipliers(
-            map.get("room_calc_base_hours"),
-            map.get("room_calc_bed_hours"),
-            map.get("room_calc_bath_hours"),
-            map.get("room_calc_living_hours")
-          ) || DEFAULT_DURATION_MULTIPLIERS;
+          parseDurationMultipliers({
+            base: map.get("room_calc_base_hours"),
+            bed: map.get("room_calc_bed_hours"),
+            bath: map.get("room_calc_bath_hours"),
+            living: map.get("room_calc_living_hours"),
+          }) || DEFAULT_DURATION_MULTIPLIERS;
         setMultipliers(newMults);
 
         const initialRec = computeRecommendedHours(
