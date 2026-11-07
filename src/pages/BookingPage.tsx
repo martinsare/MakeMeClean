@@ -34,6 +34,9 @@ import {
   Camera,
   Trash2,
   Check,
+  UtensilsCrossed,
+  Droplets,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -228,6 +231,44 @@ function getMatureExtraIcon(extraId: string, label: string) {
     return <Trash2 className="w-5 h-5 text-slate-600" />;
   }
   return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
+}
+
+function getMatureTaskIcon(title: string, category: string) {
+  const t = title.toLowerCase();
+  if (t.includes("kitchen") || t.includes("hob") || t.includes("splashback")) {
+    return <UtensilsCrossed className="w-4 h-4 text-amber-700" />;
+  }
+  if (t.includes("sink") || t.includes("tap") || t.includes("descal")) {
+    return <Droplets className="w-4 h-4 text-cyan-700" />;
+  }
+  if (t.includes("bath") || t.includes("toilet") || t.includes("shower") || category === "bathrooms") {
+    return <Bath className="w-4 h-4 text-sky-700" />;
+  }
+  if (t.includes("bed") || category === "bedrooms") {
+    return <Bed className="w-4 h-4 text-indigo-700" />;
+  }
+  if (t.includes("living") || t.includes("lounge") || t.includes("sofa") || category === "living") {
+    return <Armchair className="w-4 h-4 text-emerald-700" />;
+  }
+  if (t.includes("vacuum") || t.includes("mop") || t.includes("floor")) {
+    return <Home className="w-4 h-4 text-emerald-700" />;
+  }
+  if (t.includes("oven") || t.includes("grill")) {
+    return <Flame className="w-4 h-4 text-amber-600" />;
+  }
+  if (t.includes("fridge") || t.includes("freezer")) {
+    return <Refrigerator className="w-4 h-4 text-sky-600" />;
+  }
+  if (t.includes("window") || t.includes("glass")) {
+    return <AppWindow className="w-4 h-4 text-cyan-600" />;
+  }
+  if (t.includes("ironing") || t.includes("laundry")) {
+    return <Shirt className="w-4 h-4 text-purple-600" />;
+  }
+  if (t.includes("cabinet") || t.includes("cupboard")) {
+    return <Package className="w-4 h-4 text-amber-700" />;
+  }
+  return <CheckCircle2 className="w-4 h-4 text-emerald-600" />;
 }
 
 function formatDuration(hours: number) {
@@ -1973,6 +2014,7 @@ export default function BookingPage() {
                   extras: selectedExtras,
                   propertyType,
                   equipmentBroughtByCleaner: cleanerBringsVacuum,
+                  equipmentBroughtByCleaner: false,
                 }).map((task, idx) => (
                   <div
                     key={idx}
@@ -1980,6 +2022,8 @@ export default function BookingPage() {
                   >
                     <span className="text-base shrink-0 mt-0.5">
                       {task.icon}
+                    <span className="w-7 h-7 rounded-lg bg-white border border-gray-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                      {getMatureTaskIcon(task.title, task.category)}
                     </span>
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-gray-900 leading-snug">
@@ -2061,6 +2105,12 @@ export default function BookingPage() {
                   <span className="text-gray-400">Selected Extras: </span>
                   <span className="font-bold text-gray-800">
                     {selectedExtras.join(", ")}
+                    {selectedExtras
+                      .map((extraId) => {
+                        const found = currentAvailableExtras.find((e) => e.id === extraId);
+                        return found ? found.label : extraId;
+                      })
+                      .join(", ")}
                   </span>
                 </div>
               )}
