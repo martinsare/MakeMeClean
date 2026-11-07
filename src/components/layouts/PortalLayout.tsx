@@ -75,10 +75,17 @@ export default function PortalLayout({
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="border-b border-gray-100 px-4 pb-5 pt-6">
-        <p className="text-xl font-black tracking-tight text-gray-900">
-          {portalName}
-        </p>
-        <p className="mt-0.5 text-xs font-medium text-gray-400">
+        <div className="flex items-center gap-2 mb-2">
+          <img
+            src="/logo-horizontal.png"
+            alt="MakeMeClean"
+            className="h-8 w-auto max-w-[170px] object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "/logo.png";
+            }}
+          />
+        </div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-green-700 bg-green-50 inline-block px-2 py-0.5 rounded-md border border-green-100">
           {portalDescription}
         </p>
       </div>
@@ -197,9 +204,14 @@ export default function PortalLayout({
           >
             <Menu aria-hidden="true" className="h-5 w-5" />
           </button>
-          <p className="max-w-[55vw] truncate font-black text-gray-900">
-            {portalName}
-          </p>
+          <img
+            src="/logo-horizontal.png"
+            alt="MakeMeClean"
+            className="h-7 w-auto max-w-[140px] object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "/logo.png";
+            }}
+          />
           <div aria-hidden="true" className="h-10 w-10" />
         </header>
 
