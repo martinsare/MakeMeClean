@@ -11,7 +11,6 @@ import {
   Layers,
   XCircle,
   Home,
-  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useStaffRecord } from "@/hooks/useRole";
@@ -402,7 +401,7 @@ export default function StaffDashboard() {
                         </div>
                         {Array.isArray(b.extras) && b.extras.length > 0 && (
                           <div className="flex items-start gap-2 text-xs text-green-800 bg-green-50 p-2 rounded-lg border border-green-100 font-semibold mt-1">
-                            <Sparkles className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
                             <span>Add-ons: {b.extras.join(", ")}</span>
                           </div>
                         )}

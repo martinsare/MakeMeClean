@@ -11,7 +11,6 @@ import {
   Award,
   CheckCircle2,
   MapPin,
-  Sparkles,
   ChevronDown,
   ChevronUp,
   CreditCard,
@@ -378,7 +377,7 @@ export default function Home() {
               >
                 <div className="flex-1 relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                    <Sparkles className="w-4 h-4 text-green-600" />
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
                   </div>
                   <select
                     value={heroService}
@@ -514,7 +513,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 md:mb-14">
             <div>
               <p className="section-eyebrow">
-                <Sparkles className="w-3.5 h-3.5" /> Tailored For Your Home
+                <CheckCircle2 className="w-3.5 h-3.5" /> Tailored For Your Home
               </p>
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-gray-900 leading-tight">
                 Popular Cleaning Services

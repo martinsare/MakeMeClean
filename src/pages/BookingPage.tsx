@@ -16,7 +16,6 @@ import {
   Key,
   Car,
   Dog,
-  Sparkles,
   CalendarX,
   Phone,
   Mail,
@@ -769,7 +768,7 @@ export default function BookingPage() {
             <div className="bg-gradient-to-r from-green-900 to-gray-900 text-white rounded-3xl p-5 sm:p-6 shadow-md">
               <div className="max-w-xl">
                 <div className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-300 text-[11px] font-bold px-2.5 py-0.5 rounded-full mb-2">
-                  <Sparkles className="w-3 h-3" /> Live Cleaner Availability
+                  <CheckCircle className="w-3 h-3" /> Live Cleaner Availability
                 </div>
                 <h3 className="text-lg sm:text-xl font-black tracking-tight text-white mb-1">
                   Check available cleaners in your Welsh postcode
@@ -1293,7 +1292,7 @@ export default function BookingPage() {
             {/* Recommendation & Hour Adjuster */}
             <div className="p-4 rounded-2xl bg-green-50/60 border border-green-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4 text-green-700 shrink-0" />
+                <Clock className="w-4 h-4 text-green-700 shrink-0" />
                 <div className="text-xs text-gray-700">
                   Recommended for your selection:{" "}
                   <strong>{formatDuration(recommendedDurationHours)}</strong>
@@ -1459,7 +1458,7 @@ export default function BookingPage() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-2">
-                  <Sparkles className="w-3.5 h-3.5 inline mr-1 text-green-600" />{" "}
+                  <Shield className="w-3.5 h-3.5 inline mr-1 text-green-600" />{" "}
                   {bookingConfig.suppliesPrompt}
                 </label>
                 <div className="grid sm:grid-cols-2 gap-2">

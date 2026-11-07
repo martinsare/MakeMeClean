@@ -11,7 +11,6 @@ import {
   UserCheck,
   X,
   Home,
-  Sparkles,
   FileText,
   Key,
   ShieldCheck,
@@ -91,7 +90,7 @@ function formatExtraBadge(id: string): { label: string; icon: string } {
   const formatted = id
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
-  return { label: formatted, icon: "✨" };
+  return { label: formatted, icon: "🧹" };
 }
 
 function parseSpecialNotes(rawNotes?: string | null): {
@@ -604,7 +603,7 @@ export default function AdminPanel() {
                 {Array.isArray(assignModal.booking.extras) &&
                   assignModal.booking.extras.length > 0 && (
                     <div className="flex gap-2 text-green-800 text-xs font-semibold bg-green-50/80 p-2 rounded-lg border border-green-100">
-                      <Sparkles className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
+                      <CheckCircle className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
                       <span>
                         Extras: {assignModal.booking.extras.join(", ")}
                       </span>
@@ -1118,7 +1117,7 @@ export default function AdminPanel() {
                         {/* Col 3: Specialist Add-Ons */}
                         <div className="space-y-1.5 bg-white p-3 rounded-xl border border-gray-100 shadow-2xs">
                           <div className="flex items-center gap-1.5 font-bold text-gray-800 pb-1 border-b border-gray-100">
-                            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                            <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
                             <span>Specialist Add-Ons</span>
                             {hasExtras && (
                               <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 rounded-full ml-auto">

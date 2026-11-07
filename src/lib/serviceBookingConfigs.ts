@@ -64,7 +64,7 @@ export function getServiceBookingConfig(serviceIdOrName: string): ServiceBooking
       },
       extras: [
         { id: "wash_fold", label: "Wash & Fold Cycle", icon: "🫧", duration: 1.0, desc: "Run washing machine cycle & tumble/air dry" },
-        { id: "bed_linen_change", label: "Fresh Bed Making", icon: "✨", duration: 0.5, desc: "Strip and redress beds with ironed linens" },
+        { id: "bed_linen_change", label: "Fresh Bed Making", icon: "🛏️", duration: 0.5, desc: "Strip and redress beds with ironed linens" },
         { id: "hangers_folding", label: "Wardrobe Staging", icon: "👗", duration: 0.5, desc: "Sort onto hangers & colour-coordinated fold" },
         { id: "steam_press", label: "Steam Touch-Up", icon: "💨", duration: 0.5, desc: "Delicate vertical steam freshening" },
       ],

@@ -10,7 +10,6 @@ import {
   Send,
   Bell,
   Trophy,
-  Sparkles,
   Trash2,
   Plus,
   Home,
@@ -317,7 +316,7 @@ function BookingExtrasManager() {
   const [saved, setSaved] = useState(false);
 
   const [newLabel, setNewLabel] = useState("");
-  const [newIcon, setNewIcon] = useState("✨");
+  const [newIcon, setNewIcon] = useState("🧹");
   const [newMinutes, setNewMinutes] = useState(45);
   const [newDesc, setNewDesc] = useState("");
 
@@ -375,14 +374,14 @@ function BookingExtrasManager() {
     const newItem: BookingExtraItem = {
       id: `${id}-${Date.now().toString().slice(-4)}`,
       label: newLabel.trim(),
-      icon: newIcon.trim() || "✨",
+      icon: newIcon.trim() || "🧹",
       duration: durationHours,
       desc: newDesc.trim() || "Specialist cleaning extra",
     };
     const updated = [...extras, newItem];
     saveExtras(updated);
     setNewLabel("");
-    setNewIcon("✨");
+    setNewIcon("🧹");
     setNewMinutes(45);
     setNewDesc("");
   };
@@ -403,7 +402,7 @@ function BookingExtrasManager() {
       <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-green-50 border border-green-100 rounded-xl flex items-center justify-center text-green-600 shrink-0">
-            <Sparkles className="w-5 h-5" />
+            <Plus className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-sm font-black text-gray-900">

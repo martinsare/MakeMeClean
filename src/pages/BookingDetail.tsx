@@ -17,7 +17,6 @@ import {
   Image as ImageIcon,
   DollarSign,
   Home,
-  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -331,8 +330,14 @@ export default function BookingDetail() {
                 booking.living_rooms != null) && (
                 <InfoRow
                   icon={Home}
-                  label={getServiceBookingConfig(booking.service_type || booking.service_name).propertyTypeLabel}
-                  value={getServiceBookingConfig(booking.service_type || booking.service_name).formatLayout(
+                  label={
+                    getServiceBookingConfig(
+                      booking.service_type || booking.service_name
+                    ).propertyTypeLabel
+                  }
+                  value={getServiceBookingConfig(
+                    booking.service_type || booking.service_name
+                  ).formatLayout(
                     booking.bedrooms,
                     booking.bathrooms,
                     booking.living_rooms,
@@ -342,7 +347,7 @@ export default function BookingDetail() {
               )}
               {Array.isArray(booking.extras) && booking.extras.length > 0 && (
                 <InfoRow
-                  icon={Sparkles}
+                  icon={CheckCircle}
                   label="Specialist Extras"
                   value={booking.extras.join(", ")}
                 />

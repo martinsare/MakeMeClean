@@ -33,7 +33,7 @@ export function resolveServiceCategory(s: Service): string {
 
 function resolveServiceIcon(s: Service, catKey: string): string {
   if (s.icon && s.icon.trim() !== "") return s.icon;
-  if (catKey === "deep") return "✨";
+  if (catKey === "deep") return "🧽";
   if (catKey === "airbnb") return "🏨";
   if (catKey === "ironing") return "🧺";
   if (catKey === "commercial") return "🏢";

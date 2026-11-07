@@ -6,7 +6,6 @@ import {
   XCircle,
   Clock,
   Star,
-  Sparkles,
   ArrowRight,
   ChevronDown,
   ChevronUp,
@@ -96,13 +95,25 @@ export default function ServiceDetail() {
 
   const currentDurationObj =
     config.durationGuide[selectedPropIndex] || config.durationGuide[0];
-  const approxHours = currentDurationObj?.approxHours ?? (selectedPropIndex === 0 ? 2 : selectedPropIndex === 1 ? 3 : selectedPropIndex === 2 ? 4 : 5);
+  const approxHours =
+    currentDurationObj?.approxHours ??
+    (selectedPropIndex === 0
+      ? 2
+      : selectedPropIndex === 1
+      ? 3
+      : selectedPropIndex === 2
+      ? 4
+      : 5);
   const estimatedCost = hourlyRate * approxHours;
   const bookingParams = new URLSearchParams();
-  if (currentDurationObj?.bedrooms != null) bookingParams.set("bedrooms", String(currentDurationObj.bedrooms));
-  if (currentDurationObj?.bathrooms != null) bookingParams.set("bathrooms", String(currentDurationObj.bathrooms));
-  if (currentDurationObj?.living != null) bookingParams.set("livingRooms", String(currentDurationObj.living));
-  if (currentDurationObj?.propertyType) bookingParams.set("propertyType", currentDurationObj.propertyType);
+  if (currentDurationObj?.bedrooms != null)
+    bookingParams.set("bedrooms", String(currentDurationObj.bedrooms));
+  if (currentDurationObj?.bathrooms != null)
+    bookingParams.set("bathrooms", String(currentDurationObj.bathrooms));
+  if (currentDurationObj?.living != null)
+    bookingParams.set("livingRooms", String(currentDurationObj.living));
+  if (currentDurationObj?.propertyType)
+    bookingParams.set("propertyType", currentDurationObj.propertyType);
   const bookLink = /book/;
 
   return (
@@ -129,7 +140,7 @@ export default function ServiceDetail() {
             {/* Left Content */}
             <div className="lg:col-span-7">
               <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 text-xs font-semibold px-3 py-1 rounded-full mb-4">
-                <Sparkles className="w-3.5 h-3.5 text-green-600" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
                 {config.badge || "Verified Welsh Service"}
               </div>
 

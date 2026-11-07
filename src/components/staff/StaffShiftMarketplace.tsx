@@ -11,7 +11,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Home,
-  Sparkles,
+  CheckCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -130,7 +130,11 @@ export default function StaffShiftMarketplace({
             bathrooms: 2,
             living_rooms: 1,
             property_type: "House",
-            extras: ["Inside Oven & Grill", "Interior Window Glass", "Inside Kitchen Cabinets"],
+            extras: [
+              "Inside Oven & Grill",
+              "Interior Window Glass",
+              "Inside Kitchen Cabinets",
+            ],
             notes: "Empty flat. Oven and interior windows included.",
           },
         ]);
@@ -182,7 +186,8 @@ export default function StaffShiftMarketplace({
           </span>
           <h2 className="text-xl font-black mt-2">Available Customer Cleans</h2>
           <p className="text-xs text-green-100 max-w-md mt-1">
-            Pick up flexible open cleaning slots in your area. Shifts are awarded instantly on a first-come basis.
+            Pick up flexible open cleaning slots in your area. Shifts are
+            awarded instantly on a first-come basis.
           </p>
         </div>
         <div className="hidden sm:flex w-12 h-12 bg-white/10 rounded-2xl items-center justify-center">
@@ -255,12 +260,14 @@ export default function StaffShiftMarketplace({
                   <div className="flex items-center gap-2 font-medium text-gray-700">
                     <Home className="w-4 h-4 text-green-600" />
                     <span>
-                      {s.bedrooms ?? 1} Bed · {s.bathrooms ?? 1} Bath · {s.living_rooms ?? 1} Living ({s.property_type || "House/Flat"})
+                      {s.bedrooms ?? 1} Bed · {s.bathrooms ?? 1} Bath ·{" "}
+                      {s.living_rooms ?? 1} Living (
+                      {s.property_type || "House/Flat"})
                     </span>
                   </div>
                   {s.extras && s.extras.length > 0 && (
                     <div className="flex items-start gap-2 text-green-800 bg-green-50/80 p-1.5 rounded-lg border border-green-100 font-semibold">
-                      <Sparkles className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
+                      <CheckCircle className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
                       <span>Add-ons: {s.extras.join(", ")}</span>
                     </div>
                   )}
@@ -313,7 +320,9 @@ export default function StaffShiftMarketplace({
                 {modalShift.time_slot}
               </p>
               <p>
-                <strong>Property:</strong> {modalShift.bedrooms ?? 1} Bed · {modalShift.bathrooms ?? 1} Bath ({modalShift.property_type || "House/Flat"})
+                <strong>Property:</strong> {modalShift.bedrooms ?? 1} Bed ·{" "}
+                {modalShift.bathrooms ?? 1} Bath (
+                {modalShift.property_type || "House/Flat"})
               </p>
               {modalShift.extras && modalShift.extras.length > 0 && (
                 <p className="text-green-800 font-semibold">

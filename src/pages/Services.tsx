@@ -5,7 +5,6 @@ import {
   Shield,
   CheckCircle2,
   Clock,
-  Sparkles,
   ArrowRight,
   Leaf,
   Layers,
@@ -64,7 +63,7 @@ export default function Services() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200/80 text-green-800 text-xs font-semibold px-3 py-1 rounded-full mb-4">
-              <Sparkles className="w-3.5 h-3.5 text-green-600" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
               Transparent, Professional Cleaning Across Wales
             </div>
 
@@ -231,7 +230,7 @@ export default function Services() {
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div>
               <p className="section-eyebrow">
-                <Sparkles className="w-3.5 h-3.5" /> Complete Transparency
+                <CheckCircle2 className="w-3.5 h-3.5" /> Complete Transparency
               </p>
               <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-4">
                 What's included in every standard clean
