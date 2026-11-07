@@ -11,6 +11,7 @@ import { handlePlans } from './_handlers/plans.js';
 import { handleLoyalty } from './_handlers/loyalty.js';
 import { handleContact } from './_handlers/contact.js';
 import { handleNotifications } from './_handlers/notifications.js';
+import { handleStaff } from './_handlers/staff.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleCors(req, res)) return;
@@ -59,6 +60,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return await handleContact(req, res);
       case 'notifications':
         return await handleNotifications(req, res);
+      case 'staff':
+        return await handleStaff(req, res);
       default:
         return sendError(res, `API route not found: /api/${path}`, 404);
     }
