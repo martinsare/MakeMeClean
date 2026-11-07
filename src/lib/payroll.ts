@@ -22,26 +22,68 @@ export interface PayslipCalc {
   netPay:           number;
 }
 
+/**
+ * Parses UK Tax Codes dynamically:
+ * - "1257L" -> £12,570 tax-free allowance
+ * - "BR" -> 0 allowance, all taxed at 20%
+ * - "0T" -> 0 allowance
+ * - "NT" -> No tax
+ * - Custom e.g. "1100L" -> £11,000 allowance
+ */
+export function parseTaxAllowance(taxCode: string): number {
+  const code = (taxCode || "1257L").trim().toUpperCase();
+  if (code === "BR" || code === "0T" || code === "D0" || code === "D1") return 0;
+  if (code === "NT") return 99999999; // No tax
+  const match = code.match(/^(\d+)[A-Z]?$/);
+  if (match) {
+    return parseInt(match[1], 10) * 10;
+  }
+  return ANNUAL_PERSONAL_ALLOWANCE;
+}
+
 export function calculatePayslip(
   grossPay: number,
   period: "weekly" | "monthly",
-  taxCode = "1257L"
+  taxCode = "1257L",
+  employmentType: "paye" | "contractor" = "paye"
 ): PayslipCalc {
+  const r = (n: number) => Math.round(n * 100) / 100;
+
+  // If contractor/self-employed, no PAYE or employee NI deducted at source
+  if (employmentType === "contractor") {
+    return {
+      grossPay:        r(grossPay),
+      taxablePay:      0,
+      payeTax:         0,
+      niEmployee:      0,
+      niEmployer:      0,
+      totalDeductions: 0,
+      netPay:          r(grossPay),
+    };
+  }
+
   const divisor = period === "weekly" ? 52 : 12;
 
-  // Period-level thresholds
-  const personalAllowancePeriod = ANNUAL_PERSONAL_ALLOWANCE / divisor;
+  // Dynamic annual allowance based on the employee's actual tax code
+  const annualAllowance = parseTaxAllowance(taxCode);
+  const personalAllowancePeriod = annualAllowance / divisor;
   const basicRateBandPeriod     = BASIC_RATE_BAND           / divisor;
   const uelPeriod               = UPPER_EARNINGS_LIMIT      / divisor;
   const ptPeriod                = PRIMARY_THRESHOLD         / divisor;
   const stPeriod                = SECONDARY_THRESHOLD       / divisor;
 
-  // PAYE — using 1257L (personalAllowancePeriod) regardless of supplied code for now
+  const codeUpper = (taxCode || "").trim().toUpperCase();
   const taxFreeAmount = personalAllowancePeriod;
   const taxablePay    = Math.max(0, grossPay - taxFreeAmount);
 
   let payeTax = 0;
-  if (taxablePay > 0) {
+  if (codeUpper === "NT") {
+    payeTax = 0;
+  } else if (codeUpper === "D0") {
+    payeTax = grossPay * HIGHER_RATE; // Higher rate (40%) on everything
+  } else if (codeUpper === "BR") {
+    payeTax = grossPay * BASIC_RATE;  // Basic rate (20%) on everything
+  } else if (taxablePay > 0) {
     const basic  = Math.min(taxablePay, basicRateBandPeriod);
     const higher = Math.max(0, taxablePay - basicRateBandPeriod);
     payeTax = basic * BASIC_RATE + higher * HIGHER_RATE;
@@ -60,8 +102,6 @@ export function calculatePayslip(
 
   const totalDeductions = payeTax + niEmployee;
   const netPay          = grossPay - totalDeductions;
-
-  const r = (n: number) => Math.round(n * 100) / 100;
 
   return {
     grossPay:        r(grossPay),
