@@ -62,6 +62,57 @@ const EMPTY_DISCOUNTS: Record<RecurringFreq, number> = {
   monthly: 0,
 };
 
+const DRAFT_STORAGE_KEY = "mmc_booking_draft_v1";
+
+interface BookingDraftData {
+  serviceId?: string;
+  step: WizardStep;
+  propertyType: string;
+  bedrooms: number;
+  bathrooms: number;
+  livingRooms: number;
+  selectedExtras: string[];
+  date: string;
+  startHour: string;
+  durationHours: number;
+  address: string;
+  city: string;
+  postcode: string;
+  notes: string;
+  accessMethod: string;
+  suppliesOption: string;
+  parkingOption: string;
+  hasPets: boolean;
+  cleanerBringsVacuum: boolean;
+  recurringFreq: RecurringFreq;
+}
+
+function loadSavedDraft(): Partial<BookingDraftData> | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(data: Partial<BookingDraftData>) {
+  try {
+    sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // sessionStorage quota or security error ignored
+  }
+}
+
+function clearDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function formatDuration(hours: number) {
   if (hours === 0.5) return "30 minutes";
   if (hours % 1 === 0) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
@@ -75,7 +126,14 @@ export default function BookingPage() {
   const params = useParams<{ serviceId?: string }>();
   const { services } = useServices();
 
-  const [step, setStep] = useState<WizardStep>(1);
+  const savedDraft = loadSavedDraft();
+
+  const [step, setStep] = useState<WizardStep>(() => {
+    if (savedDraft?.step && savedDraft.step >= 1 && savedDraft.step <= 5) {
+      return savedDraft.step as WizardStep;
+    }
+    return 1;
+  });
   const [selectedService, setSelectedService] = useState<Service | null>(null);
 
   // Dynamic Room & Extras State
@@ -86,32 +144,50 @@ export default function BookingPage() {
     DEFAULT_DURATION_MULTIPLIERS
   );
 
-  const [propertyType, setPropertyType] = useState("House / Flat");
-  const [bedrooms, setBedrooms] = useState(2);
-  const [bathrooms, setBathrooms] = useState(1);
-  const [livingRooms, setLivingRooms] = useState(1);
-  const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
-
-  const [date, setDate] = useState("");
-  const [startHour, setStartHour] = useState("09:00");
-  const [durationHours, setDurationHours] = useState(() =>
-    calculateRecommendedHours(2, 1, 1, [])
+  const [propertyType, setPropertyType] = useState(
+    () => savedDraft?.propertyType ?? "House / Flat"
   );
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
+  const [bedrooms, setBedrooms] = useState(() => savedDraft?.bedrooms ?? 2);
+  const [bathrooms, setBathrooms] = useState(() => savedDraft?.bathrooms ?? 1);
+  const [livingRooms, setLivingRooms] = useState(
+    () => savedDraft?.livingRooms ?? 1
+  );
+  const [selectedExtras, setSelectedExtras] = useState<string[]>(
+    () => savedDraft?.selectedExtras ?? []
+  );
+
+  const [date, setDate] = useState(() => savedDraft?.date ?? "");
+  const [startHour, setStartHour] = useState(
+    () => savedDraft?.startHour ?? "09:00"
+  );
+  const [durationHours, setDurationHours] = useState(
+    () => savedDraft?.durationHours ?? calculateRecommendedHours(2, 1, 1, [])
+  );
+  const [address, setAddress] = useState(() => savedDraft?.address ?? "");
+  const [city, setCity] = useState(() => savedDraft?.city ?? "");
   const [citiesList, setCitiesList] = useState<string[]>(walesCities);
-  const [postcode, setPostcode] = useState("");
+  const [postcode, setPostcode] = useState(() => savedDraft?.postcode ?? "");
   const [initialPostcode, setInitialPostcode] = useState("");
   const [coverageInfo, setCoverageInfo] =
     useState<PostcodeCoverageResult | null>(null);
   const [coverageChecked, setCoverageChecked] = useState(false);
-  const [cleanerBringsVacuum, setCleanerBringsVacuum] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [accessMethod, setAccessMethod] = useState("home");
-  const [suppliesOption, setSuppliesOption] = useState("cleaner");
-  const [parkingOption, setParkingOption] = useState("free");
-  const [hasPets, setHasPets] = useState(false);
-  const [recurringFreq, setRecurringFreq] = useState<RecurringFreq>("none");
+  const [cleanerBringsVacuum, setCleanerBringsVacuum] = useState(
+    () => savedDraft?.cleanerBringsVacuum ?? false
+  );
+  const [notes, setNotes] = useState(() => savedDraft?.notes ?? "");
+  const [accessMethod, setAccessMethod] = useState(
+    () => savedDraft?.accessMethod ?? "home"
+  );
+  const [suppliesOption, setSuppliesOption] = useState(
+    () => savedDraft?.suppliesOption ?? "cleaner"
+  );
+  const [parkingOption, setParkingOption] = useState(
+    () => savedDraft?.parkingOption ?? "free"
+  );
+  const [hasPets, setHasPets] = useState(() => savedDraft?.hasPets ?? false);
+  const [recurringFreq, setRecurringFreq] = useState<RecurringFreq>(
+    () => savedDraft?.recurringFreq ?? "none"
+  );
   const [liveDiscounts, setLiveDiscounts] =
     useState<Record<RecurringFreq, number>>(EMPTY_DISCOUNTS);
   const [submitting, setSubmitting] = useState(false);
@@ -384,20 +460,77 @@ export default function BookingPage() {
   }, []);
 
   useEffect(() => {
-    if (params.serviceId) {
-      const s = services.find((s) => s.id === params.serviceId);
+    const targetServiceId = params.serviceId || savedDraft?.serviceId;
+    if (targetServiceId && services.length > 0) {
+      const s = services.find((svc) => svc.id === targetServiceId);
       if (s) {
         setSelectedService(s);
-        const cfg = getServiceBookingConfig(s.id || s.name);
-        setPropertyType(cfg.defaultPropertyType);
-        setBedrooms(cfg.field1.default);
-        setBathrooms(cfg.field2.default);
-        setLivingRooms(cfg.field3.default);
-        setSelectedExtras([]);
-        setStep(2);
+        // Only set default scope if user has not yet entered rooms or had saved draft
+        if (!savedDraft?.serviceId) {
+          const cfg = getServiceBookingConfig(s.id || s.name);
+          setPropertyType(cfg.defaultPropertyType);
+          setBedrooms(cfg.field1.default);
+          setBathrooms(cfg.field2.default);
+          setLivingRooms(cfg.field3.default);
+          setSelectedExtras([]);
+          setStep(2);
+        }
       }
     }
   }, [params.serviceId, services]);
+
+  // Persist draft on every change so browser refresh doesn't lose progress
+  useEffect(() => {
+    if (step === 6) {
+      clearDraft();
+      return;
+    }
+    if (selectedService) {
+      saveDraft({
+        serviceId: selectedService.id,
+        step,
+        propertyType,
+        bedrooms,
+        bathrooms,
+        livingRooms,
+        selectedExtras,
+        date,
+        startHour,
+        durationHours,
+        address,
+        city,
+        postcode,
+        notes,
+        accessMethod,
+        suppliesOption,
+        parkingOption,
+        hasPets,
+        cleanerBringsVacuum,
+        recurringFreq,
+      });
+    }
+  }, [
+    selectedService,
+    step,
+    propertyType,
+    bedrooms,
+    bathrooms,
+    livingRooms,
+    selectedExtras,
+    date,
+    startHour,
+    durationHours,
+    address,
+    city,
+    postcode,
+    notes,
+    accessMethod,
+    suppliesOption,
+    parkingOption,
+    hasPets,
+    cleanerBringsVacuum,
+    recurringFreq,
+  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -574,6 +707,7 @@ export default function BookingPage() {
       });
 
       const newBooking = result.booking || result;
+      clearDraft();
       setBookingId(newBooking.id);
       setStep(6);
     } catch (err: any) {
