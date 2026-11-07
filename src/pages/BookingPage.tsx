@@ -479,17 +479,7 @@ export default function BookingPage() {
   const handleStepValidation = (targetStep: WizardStep): boolean => {
     setError("");
     if (targetStep === 3) {
-      // Validating Step 2: Frequency & Schedule
-      if (!date) {
-        setError("Please choose your preferred appointment date.");
-        return false;
-      }
-      if (availableStartHours.length === 0) {
-        setError("No future slots left today. Please select another date.");
-        return false;
-      }
-    } else if (targetStep === 4) {
-      // Validating Step 3: Scale & Hours
+      // Validating Step 2: Scale, Rooms & Specialist Extras
       if (
         bedrooms === 0 &&
         bathrooms === 0 &&
@@ -507,6 +497,16 @@ export default function BookingPage() {
         setError(
           `This clean needs more than ${MAX_DURATION_HOURS} hours. Please contact us for a quote.`
         );
+        return false;
+      }
+    } else if (targetStep === 4) {
+      // Validating Step 3: Frequency & Schedule
+      if (!date) {
+        setError("Please choose your preferred appointment date.");
+        return false;
+      }
+      if (availableStartHours.length === 0) {
+        setError("No future slots left today. Please select another date.");
         return false;
       }
     } else if (targetStep === 5) {
@@ -727,8 +727,8 @@ export default function BookingPage() {
 
   const stepsList = [
     { num: 1, label: "Service" },
-    { num: 2, label: "Schedule" },
-    { num: 3, label: "Hours & Extras" },
+    { num: 2, label: "Scope & Extras" },
+    { num: 3, label: "Schedule" },
     { num: 4, label: "Location" },
     { num: 5, label: "Review" },
   ];
@@ -931,7 +931,7 @@ export default function BookingPage() {
           </div>
         )}
 
-        {/* ═════════ STEP 2: FREQUENCY & SCHEDULE ═════════ */}
+        {/* ═════════ STEP 2: SCOPE, HOURS & EXTRAS ═════════ */}
         {step === 2 && selectedService && (
           <div className="animate-fade-in bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
             <button
@@ -943,159 +943,7 @@ export default function BookingPage() {
 
             <div>
               <p className="section-eyebrow">
-                <Calendar className="w-3.5 h-3.5" /> Step 2 of 5
-              </p>
-              <h2 className="text-2xl font-black text-gray-900">
-                Frequency & Schedule
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Lock in your recurring slot or book a single visit.
-              </p>
-            </div>
-
-            {/* Recurring Frequency Selector */}
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Repeat className="w-3.5 h-3.5 text-green-600" /> How often do
-                you need us?
-              </label>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {(
-                  [
-                    {
-                      id: "weekly",
-                      label: "Weekly",
-                      sub: "Most popular",
-                      discountKey: "weekly",
-                    },
-                    {
-                      id: "fortnightly",
-                      label: "Fortnightly",
-                      sub: "Every 2 weeks",
-                      discountKey: "fortnightly",
-                    },
-                    {
-                      id: "monthly",
-                      label: "Monthly",
-                      sub: "Every 4 weeks",
-                      discountKey: "monthly",
-                    },
-                    {
-                      id: "none",
-                      label: "One-off",
-                      sub: "Single visit",
-                      discountKey: "none",
-                    },
-                  ] as const
-                ).map((freq) => {
-                  const isSelected = recurringFreq === freq.id;
-                  const discount =
-                    liveDiscounts[freq.discountKey as RecurringFreq] ?? 0;
-                  return (
-                    <button
-                      type="button"
-                      key={freq.id}
-                      onClick={() => setRecurringFreq(freq.id as RecurringFreq)}
-                      className={cn(
-                        "relative flex flex-col items-start p-3.5 rounded-2xl border text-left transition-all",
-                        isSelected
-                          ? "border-green-600 bg-green-50/70 text-green-900 ring-2 ring-green-600/20 shadow-xs"
-                          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50/50"
-                      )}
-                    >
-                      {discount > 0 && (
-                        <span className="absolute -top-2 -right-1 bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-xs">
-                          SAVE {discount}%
-                        </span>
-                      )}
-                      <span className="font-black text-xs">{freq.label}</span>
-                      <span className="text-[10px] text-gray-400 font-normal mt-0.5">
-                        {freq.sub}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Date & Time Picker */}
-            <div className="grid sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-              <div>
-                <label className="text-xs font-bold text-gray-700 block mb-1.5">
-                  Preferred Date
-                </label>
-                <input
-                  type="date"
-                  required
-                  min={minDateStr}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="input-field"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-700 block mb-1.5">
-                  Start Time Slot
-                </label>
-                <select
-                  required
-                  value={startHour}
-                  onChange={(e) => setStartHour(e.target.value)}
-                  className="input-field"
-                >
-                  {availableStartHours.map((h) => (
-                    <option key={h} value={h}>
-                      {h} (Finishes at{" "}
-                      {calcTimeSlot(h, durationHours).split(" – ")[1]})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {date && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-800 flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                <span>
-                  Appointment scheduled: <strong>{date}</strong> from{" "}
-                  <strong>{timeSlot}</strong>
-                </span>
-              </div>
-            )}
-
-            <div className="flex justify-between items-center pt-4 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="btn-secondary py-2.5 px-5 text-xs"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => handleNext(3)}
-                className="btn-primary py-2.5 px-6 text-xs font-bold flex items-center gap-1.5"
-              >
-                Continue to Scope & Hours <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ═════════ STEP 3: SCOPE, HOURS & EXTRAS ═════════ */}
-        {step === 3 && selectedService && (
-          <div className="animate-fade-in bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
-            <button
-              onClick={() => setStep(2)}
-              className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-green-700 transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to schedule
-            </button>
-
-            <div>
-              <p className="section-eyebrow">
-                <Home className="w-3.5 h-3.5" /> Step 3 of 5
+                <Home className="w-3.5 h-3.5" /> Step 2 of 5
               </p>
               <h2 className="text-2xl font-black text-gray-900">
                 {bookingConfig.stepATitle}
@@ -1371,6 +1219,160 @@ export default function BookingPage() {
             <div className="flex justify-between items-center pt-4 border-t border-gray-100">
               <button
                 type="button"
+                onClick={() => setStep(1)}
+                className="btn-secondary py-2.5 px-5 text-xs"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNext(3)}
+                className="btn-primary py-2.5 px-6 text-xs font-bold flex items-center gap-1.5"
+              >
+                Continue to Schedule & Frequency{" "}
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ═════════ STEP 3: FREQUENCY & SCHEDULE ═════════ */}
+        {step === 3 && selectedService && (
+          <div className="animate-fade-in bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
+            <button
+              onClick={() => setStep(2)}
+              className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-green-700 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to scope & hours
+            </button>
+
+            <div>
+              <p className="section-eyebrow">
+                <Calendar className="w-3.5 h-3.5" /> Step 3 of 5
+              </p>
+              <h2 className="text-2xl font-black text-gray-900">
+                Frequency & Schedule
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Lock in your appointment date and start time slot for your{" "}
+                {formatDuration(durationHours)} clean.
+              </p>
+            </div>
+
+            {/* Recurring Frequency Selector */}
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                <Repeat className="w-3.5 h-3.5 text-green-600" /> How often do
+                you need us?
+              </label>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {(
+                  [
+                    {
+                      id: "weekly",
+                      label: "Weekly",
+                      sub: "Most popular",
+                      discountKey: "weekly",
+                    },
+                    {
+                      id: "fortnightly",
+                      label: "Fortnightly",
+                      sub: "Every 2 weeks",
+                      discountKey: "fortnightly",
+                    },
+                    {
+                      id: "monthly",
+                      label: "Monthly",
+                      sub: "Every 4 weeks",
+                      discountKey: "monthly",
+                    },
+                    {
+                      id: "none",
+                      label: "One-off",
+                      sub: "Single visit",
+                      discountKey: "none",
+                    },
+                  ] as const
+                ).map((freq) => {
+                  const isSelected = recurringFreq === freq.id;
+                  const discount =
+                    liveDiscounts[freq.discountKey as RecurringFreq] ?? 0;
+                  return (
+                    <button
+                      type="button"
+                      key={freq.id}
+                      onClick={() => setRecurringFreq(freq.id as RecurringFreq)}
+                      className={cn(
+                        "relative flex flex-col items-start p-3.5 rounded-2xl border text-left transition-all",
+                        isSelected
+                          ? "border-green-600 bg-green-50/70 text-green-900 ring-2 ring-green-600/20 shadow-xs"
+                          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50/50"
+                      )}
+                    >
+                      {discount > 0 && (
+                        <span className="absolute -top-2 -right-1 bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-xs">
+                          SAVE {discount}%
+                        </span>
+                      )}
+                      <span className="font-black text-xs">{freq.label}</span>
+                      <span className="text-[10px] text-gray-400 font-normal mt-0.5">
+                        {freq.sub}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Date & Time Picker */}
+            <div className="grid sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                  Preferred Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  min={minDateStr}
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                  Start Time Slot
+                </label>
+                <select
+                  required
+                  value={startHour}
+                  onChange={(e) => setStartHour(e.target.value)}
+                  className="input-field"
+                >
+                  {availableStartHours.map((h) => (
+                    <option key={h} value={h}>
+                      {h} (Finishes at{" "}
+                      {calcTimeSlot(h, durationHours).split(" – ")[1]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {date && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-800 flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                <span>
+                  Appointment scheduled: <strong>{date}</strong> from{" "}
+                  <strong>{timeSlot}</strong>
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+              <button
+                type="button"
                 onClick={() => setStep(2)}
                 className="btn-secondary py-2.5 px-5 text-xs"
               >
@@ -1395,7 +1397,7 @@ export default function BookingPage() {
               onClick={() => setStep(3)}
               className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-green-700 transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to hours & scope
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to schedule
             </button>
 
             <div>
