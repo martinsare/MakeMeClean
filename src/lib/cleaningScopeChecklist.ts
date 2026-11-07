@@ -81,19 +81,22 @@ export function generateCleaningScopeChecklist(params: {
   }
 
   // Standard / Deep / Airbnb Domestic Clean scope
-  // Kitchen (always included in domestic cleans)
-  list.push({
-    category: "kitchen",
-    title: "Kitchen Worktops, Hobs & Splashbacks",
-    desc: "Degreased, sanitized and buffed streak-free",
-    icon: "🍳",
-  });
-  list.push({
-    category: "kitchen",
-    title: "Sink & Tap Descaling",
-    desc: "Limescale scrubbed, basin sanitized and chrome taps polished",
-    icon: "🚰",
-  });
+  // Kitchen (only included if entire house clean or kitchen elements exist, or if living/dining/bedrooms are selected)
+  const isFullHouseClean = bedrooms > 0 || livingRooms > 0;
+  if (isFullHouseClean) {
+    list.push({
+      category: "kitchen",
+      title: "Kitchen Worktops, Hobs & Splashbacks",
+      desc: "Degreased, sanitized and buffed streak-free",
+      icon: "🍳",
+    });
+    list.push({
+      category: "kitchen",
+      title: "Sink & Tap Descaling",
+      desc: "Limescale scrubbed, basin sanitized and chrome taps polished",
+      icon: "🚰",
+    });
+  }
 
   // Bathrooms
   if (bathrooms > 0) {
@@ -125,13 +128,15 @@ export function generateCleaningScopeChecklist(params: {
     });
   }
 
-  // General whole home floors
-  list.push({
-    category: "living",
-    title: "Full Vacuum & Mop",
-    desc: "Carpets vacuumed edge-to-edge & hard floors damp mopped with eco cleanser",
-    icon: "🧹",
-  });
+  // General whole home floors - only if living areas or bedrooms are selected
+  if (isFullHouseClean) {
+    list.push({
+      category: "living",
+      title: "Full Vacuum & Mop",
+      desc: "Carpets vacuumed edge-to-edge & hard floors damp mopped with eco cleanser",
+      icon: "🧹",
+    });
+  }
 
   // Specialist extras
   if (extras.includes("oven")) {
