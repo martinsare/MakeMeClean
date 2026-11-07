@@ -187,7 +187,7 @@ function getMatureExtraIcon(extraId: string, label: string) {
   }
   if (key.includes("linen") || key.includes("bed")) {
     return <Bed className="w-5 h-5 text-indigo-600" />;
-  }
+   }
   if (
     key.includes("ironing") ||
     key.includes("laundry") ||
