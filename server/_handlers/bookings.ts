@@ -24,8 +24,21 @@ const ACCEPTED_PROPERTY_TYPES: readonly string[] = [
   ...BOOKING_PROPERTY_TYPES,
   'House',
   'Flat / Apartment',
+  'Apartment / Flat',
+  'House / Flat',
   'House/Flat',
   'Studio / HMO',
+  'Studio',
+  'HMO / Shared House',
+  'House / Cottage',
+  'Studio / Pod',
+  'Private Residence',
+  'Shared House / Flat',
+  'Business / Boutique',
+  'Private Office',
+  'Open Plan / Coworking',
+  'Retail / Studio',
+  'Clinic / Practice',
 ];
 
 function parseRoomCount(value: unknown, maximum: number): number | null {

@@ -782,6 +782,13 @@ export default function BookingPage() {
     if (targetStep === 3) {
       // Validating Step 2: Scale, Rooms & Specialist Extras
       if (
+        !propertyType ||
+        !bookingConfig.propertyTypes.includes(propertyType)
+      ) {
+        setError("Please choose a property type.");
+        return false;
+      }
+      if (
         bedrooms === 0 &&
         bathrooms === 0 &&
         livingRooms === 0 &&
