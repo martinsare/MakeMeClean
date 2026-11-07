@@ -60,15 +60,17 @@ export default function Footer() {
             <p className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-5">
               Services
             </p>
-            <ul className="space-y-2.5 text-sm">
+            <ul className="space-y-3 text-sm">
               {buildServiceCatalogFromDb(services).map((cat) => (
                 <li key={cat.id}>
                   <Link
                     href={`/services/${cat.primaryServiceId}`}
-                    className="hover:text-green-400 transition-colors duration-100 flex items-center justify-between gap-2 group"
+                    className="hover:text-green-400 transition-colors duration-100 flex flex-col group py-0.5"
                   >
-                    <span>{cat.name}</span>
-                    <span className="text-xs text-gray-400 group-hover:text-green-400 font-semibold shrink-0">
+                    <span className="text-gray-300 group-hover:text-green-400 leading-snug">
+                      {cat.name}
+                    </span>
+                    <span className="text-xs text-emerald-400/80 font-medium">
                       {cat.hourlyRateRange}
                     </span>
                   </Link>
