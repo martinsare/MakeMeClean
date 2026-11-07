@@ -25,19 +25,13 @@ export default function Footer() {
           <div className="lg:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-5">
               <img
-                src={logoUrl}
+                src="/logo-dark.png"
                 alt="MakeMeClean"
-                className="w-8 h-8 rounded-lg object-cover"
+                className="h-9 w-auto max-w-[200px] object-contain rounded-lg"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
+                  (e.target as HTMLImageElement).src = logoUrl;
                 }}
               />
-              <span
-                className="text-lg font-black text-white tracking-tight"
-                style={{ fontFamily: "Outfit, sans-serif" }}
-              >
-                MakeMe<span className="text-green-400">Clean</span>
-              </span>
             </Link>
             <p className="text-sm leading-relaxed text-gray-500 mb-6">
               Trusted cleaning services across Wales. Vetted, insured, and

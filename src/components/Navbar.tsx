@@ -74,19 +74,14 @@ export default function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group shrink-0">
             <img
-              src="/logo.png"
+              src="/logo-horizontal.png"
               alt="MakeMeClean"
-              className="w-8 h-8 rounded-lg object-cover"
+              className="h-9 w-auto max-w-[210px] object-contain rounded-lg"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
+                const target = e.target as HTMLImageElement;
+                target.src = "/logo.png";
               }}
             />
-            <span
-              className="text-xl font-black text-gray-900 tracking-tight"
-              style={{ fontFamily: "Outfit, sans-serif" }}
-            >
-              MakeMe<span className="text-green-600">Clean</span>
-            </span>
           </Link>
 
           {/* Desktop nav links */}
