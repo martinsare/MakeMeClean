@@ -34,6 +34,7 @@ export const defaultServiceDetail: ServiceDetailConfig = {
     "Hazardous chemical / biological waste removal",
     "Moving heavy furniture exceeding 25kg",
     "Deep industrial carpet extraction (bookable as separate add-on)",
+    "Deep industrial carpet wet extraction machinery",
   ],
   suppliesInfo: {
     cleanerBrings: [
@@ -44,6 +45,7 @@ export const defaultServiceDetail: ServiceDetailConfig = {
     ],
     customerProvides: [
       "Working vacuum cleaner and mop & bucket (or request cleaner to bring equipment)",
+      "Working vacuum cleaner and mop & bucket",
       "Access to running hot water and electricity",
     ],
   },
