@@ -13,7 +13,7 @@ Allow: /service-terms
 Allow: /accessibility
 Allow: /complaints
 
-# Disallow private and administrative areas
+# Disallow private, administrative, and auth utility areas
 Disallow: /admin
 Disallow: /admin/*
 Disallow: /staff
@@ -32,6 +32,10 @@ Disallow: /loyalty
 Disallow: /payment/*
 Disallow: /invoice/*
 Disallow: /change-password
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /login
+Disallow: /register
 Disallow: /api/*
 
 # Sitemap

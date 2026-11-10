@@ -36,6 +36,20 @@ export function updatePageMeta(config: SEOConfig) {
   }
 }
 
+export function setNoIndex(noIndex: boolean = true) {
+  let robotsMeta = document.querySelector('meta[name="robots"]');
+  if (noIndex) {
+    if (!robotsMeta) {
+      robotsMeta = document.createElement('meta');
+      robotsMeta.setAttribute('name', 'robots');
+      document.head.appendChild(robotsMeta);
+    }
+    robotsMeta.setAttribute('content', 'noindex, nofollow');
+  } else if (robotsMeta) {
+    robotsMeta.remove();
+  }
+}
+
 function updateMetaTag(attr: string, value: string, content: string) {
   let tag = document.querySelector(`meta[${attr}="${value}"]`);
   if (!tag) {

@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ConsentBanner from "@/components/ConsentBanner";
 import AIChatWidget from "@/components/AIChatWidget";
-import { updatePageMeta, seoDefaults } from "@/lib/seo";
+import { updatePageMeta, seoDefaults, setNoIndex } from "@/lib/seo";
 import { initializeAnalytics, trackPageView } from "@/lib/analytics";
 import { startPaymentConfirmationRetries } from "@/lib/paymentConfirmations";
 const Home = lazy(() => import("@/pages/Home"));
@@ -63,6 +63,26 @@ function ScrollToTop() {
   useEffect(() => {
     window.scrollTo(0, 0);
     trackPageView(location, document.title);
+
+    // Apply noindex dynamically to private/auth utility pages so search engines drop them
+    const noIndexPrefixes = [
+      "/forgot-password",
+      "/reset-password",
+      "/change-password",
+      "/login",
+      "/register",
+      "/dashboard",
+      "/profile",
+      "/bookings",
+      "/booking-detail",
+      "/pay",
+      "/payment",
+      "/invoice",
+      "/admin",
+      "/staff",
+    ];
+    const shouldNoIndex = noIndexPrefixes.some((prefix) => location.startsWith(prefix));
+    setNoIndex(shouldNoIndex);
   }, [location]);
   return null;
 }
