@@ -432,19 +432,62 @@ export async function handleBookings(
         }
       }
 
-      // Telegram notification
+      // Telegram notification with comprehensive booking details
       try {
         const botToken = getEnv('TELEGRAM_BOT_TOKEN');
         const chatId = getEnv('TELEGRAM_ADMIN_CHAT_ID') || getEnv('TELEGRAM_CHAT_ID');
         if (botToken && chatId) {
-          const msg = `🧹 *New Booking Created*\n*ID:* \`${booking.id}\`\n*Service:* ${service.name}\n*Date:* ${date} (${timeSlot})\n*Address:* ${booking.address}, ${booking.postcode}\n*Price:* £${finalPrice.toFixed(2)}`;
+          const customerName = (profile?.full_name || user.email?.split('@')[0] || 'Customer').trim();
+          const customerPhone = profile?.phone || 'Not provided';
+          const extrasLabel = selectedExtraIds && selectedExtraIds.length > 0 ? selectedExtraIds.join(', ') : 'None';
+          const recurringLabel = recurringFreq && recurringFreq !== 'none' && recurringFreq !== 'one_off' ? `${recurringFreq} (Active plan)` : 'One-off';
+          const accessLabel = accessMethod === 'home' ? "Customer at home" : accessMethod === 'key_safe' ? "Key safe / Lockbox" : accessMethod === 'concierge' ? "Concierge" : accessMethod === 'hidden_key' ? "Hidden key" : (accessMethod || 'Customer at home');
+          const suppliesLabel = suppliesOption === 'customer' ? "Customer provides supplies" : "Cleaner brings eco supplies";
+          const parkingLabel = parkingOption === 'paid' ? "Paid parking meter nearby" : parkingOption === 'none' ? "No parking (public transport only)" : "Free on-street/driveway";
+          const petsLabel = hasPets ? "Yes 🐾" : "No";
+
+          const lines = [
+            `🧹 *New Booking Created*`,
+            ``,
+            `*Service:* ${service.name}`,
+            `*Date:* ${date}`,
+            `*Time Slot:* ${timeSlot} (${durationHours}h)`,
+            `*Price:* £${finalPrice.toFixed(2)}${totalDiscountPercent > 0 ? ` (${totalDiscountPercent}% discount applied)` : ''}`,
+            `*Recurring:* ${recurringLabel}`,
+            `*Invoice #:* \`${invoiceNumber}\``,
+            ``,
+            `👤 *Customer Information:*`,
+            `*Name:* ${customerName}`,
+            `*Email:* ${user.email || 'N/A'}`,
+            `*Phone:* ${customerPhone}`,
+            ``,
+            `📍 *Property & Location:*`,
+            `*Type:* ${normalizedPropertyType}`,
+            `*Layout:* ${parsedBedrooms} Bed · ${parsedBathrooms} Bath · ${parsedLivingRooms} Living`,
+            `*Address:* ${booking.address}`,
+            `*City:* ${booking.city}`,
+            `*Postcode:* ${booking.postcode}`,
+            ``,
+            `⚙️ *Access & Instructions:*`,
+            `*Access:* ${accessLabel}`,
+            `*Cleaning Supplies:* ${suppliesLabel}`,
+            `*Parking:* ${parkingLabel}`,
+            `*Pets:* ${petsLabel}`,
+            `*Add-Ons:* ${extrasLabel}`,
+            notes && String(notes).trim() ? `*Special Notes:* "${String(notes).trim()}"` : null,
+            ``,
+            `*Booking ID:* \`${booking.id}\``,
+          ].filter(Boolean);
+
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
+            body: JSON.stringify({ chat_id: chatId, text: lines.join('\n'), parse_mode: 'Markdown' }),
           });
         }
-      } catch (_) {}
+      } catch (tgErr) {
+        console.error('[Telegram notification error]:', tgErr);
+      }
 
       return sendSuccess(res, { booking }, 201);
     }

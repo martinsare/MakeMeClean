@@ -267,7 +267,7 @@ function senderForEvent(event: NotificationEvent) {
   return { email: "info@makemeclean.co.uk", name: "MakeMeClean" };
 }
 
-async function sendTelegram(event: NotificationEvent, booking: any, customerEmail: string) {
+async function sendTelegram(event: NotificationEvent, booking: any, customerEmail: string, customerName?: string, customerPhone?: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
   if (!token || !chatId) return;
@@ -275,14 +275,19 @@ async function sendTelegram(event: NotificationEvent, booking: any, customerEmai
   const invoice = booking.invoice_number ?? booking.id;
   const title =
     event.type === "payment_receipt"
-      ? "✅ Payment received"
+      ? "✅ Payment Received (Booking Confirmed)"
       : event.type === "booking_confirmation"
-        ? "🧾 Booking confirmed (paid)"
-        : "⏰ Booking reminder";
+        ? "🧾 Booking Confirmed (Paid)"
+        : "⏰ Booking Reminder";
 
   let extrasList: string[] = [];
   if (Array.isArray(booking.extras)) extrasList = booking.extras.map((x: any) => String(x));
   const extrasText = extrasList.length > 0 ? extrasList.join(", ") : "None";
+
+  const accessLabel = booking.access_method === "home" ? "Customer at home" : booking.access_method === "key_safe" ? "Key safe / Lockbox" : booking.access_method === "concierge" ? "Concierge" : booking.access_method === "hidden_key" ? "Hidden key" : (booking.access_method || "Customer at home");
+  const suppliesLabel = booking.supplies_option === "customer" ? "Customer provides supplies" : "Cleaner brings eco supplies";
+  const parkingLabel = booking.parking_option === "paid" ? "Paid parking meter nearby" : booking.parking_option === "none" ? "No parking (public transport only)" : "Free on-street/driveway";
+  const petsLabel = booking.has_pets ? "Yes 🐾" : "No";
 
   const lines = [
     `*${title}*`,
@@ -290,15 +295,28 @@ async function sendTelegram(event: NotificationEvent, booking: any, customerEmai
     `*Service:* ${booking.service_name ?? "Cleaning"}`,
     `*Date:* ${booking.date ?? ""}`,
     booking.time_slot ? `*Time:* ${booking.time_slot}` : null,
-    `*Property:* ${booking.bedrooms || 1} Bed · ${booking.bathrooms || 1} Bath (${booking.property_type || "House/Flat"})`,
-    `*Add-Ons:* ${extrasText}`,
+    booking.price != null ? `*Amount:* ${formatGBP(Number(booking.price))}` : null,
+    invoice ? `*Invoice:* \`${invoice}\`` : null,
+    "",
+    `👤 *Customer Information:*`,
+    customerName ? `*Name:* ${customerName}` : null,
+    `*Email:* ${customerEmail}`,
+    customerPhone ? `*Phone:* ${customerPhone}` : null,
+    "",
+    `📍 *Property & Location:*`,
+    `*Property:* ${booking.bedrooms || 1} Bed · ${booking.bathrooms || 1} Bath · ${booking.living_rooms || 1} Living (${booking.property_type || "House/Flat"})`,
     `*Duration:* ${booking.duration_hours || 2}h`,
     booking.address ? `*Address:* ${booking.address}` : null,
     booking.city ? `*City:* ${booking.city}` : null,
     booking.postcode ? `*Postcode:* ${booking.postcode}` : null,
-    booking.price != null ? `*Amount:* ${formatGBP(Number(booking.price))}` : null,
-    invoice ? `*Invoice:* ${invoice}` : null,
-    `*Customer:* ${customerEmail}`,
+    "",
+    `⚙️ *Access & Instructions:*`,
+    `*Access:* ${accessLabel}`,
+    `*Supplies:* ${suppliesLabel}`,
+    `*Parking:* ${parkingLabel}`,
+    `*Pets:* ${petsLabel}`,
+    `*Add-Ons:* ${extrasText}`,
+    booking.notes && String(booking.notes).trim() ? `*Special Notes:* "${String(booking.notes).trim()}"` : null,
     "",
     `*Booking ID:* \`${booking.id}\``,
   ].filter(Boolean);
@@ -335,7 +353,7 @@ Deno.serve(async (req) => {
 
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("id, user_id, service_name, date, time_slot, address, city, postcode, price, invoice_number, payment_status, bedrooms, bathrooms, living_rooms, property_type, duration_hours, extras, notes")
+      .select("id, user_id, service_name, date, time_slot, address, city, postcode, price, invoice_number, payment_status, bedrooms, bathrooms, living_rooms, property_type, duration_hours, extras, notes, access_method, supplies_option, parking_option, has_pets")
       .eq("id", payload.bookingId)
       .single();
 
@@ -343,6 +361,16 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(booking.user_id);
     if (userErr || !userData?.user?.email) return json(400, { error: "Customer email not found" });
+
+    // Fetch profile info for name and phone if available
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, phone")
+      .eq("id", booking.user_id)
+      .maybeSingle();
+
+    const customerName = profile?.full_name || userData.user.user_metadata?.full_name || userData.user.email?.split("@")[0];
+    const customerPhone = profile?.phone || userData.user.user_metadata?.phone;
 
     const email = buildEmail(payload, booking);
     const sender = senderForEvent(payload);
@@ -368,10 +396,10 @@ Deno.serve(async (req) => {
       }
     })();
 
-    // Optional internal notification: only notify once after payment
-    if (payload.type === "payment_receipt") {
+    // Internal notification sent to Telegram upon booking confirmation or payment
+    if (payload.type === "payment_receipt" || payload.type === "booking_confirmation") {
       try {
-        await sendTelegram(payload, booking, userData.user.email);
+        await sendTelegram(payload, booking, userData.user.email, customerName, customerPhone);
       } catch (e) {
         console.error("[notifications] Telegram failed:", e);
       }

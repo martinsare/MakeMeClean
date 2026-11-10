@@ -22684,13 +22684,13 @@ async function handleDashboard(req, res) {
       active: Boolean(s.active),
       image_url: resolveServiceImageUrl(s.id, s.image_url)
     }));
-    const profile = profileRes.data || {
+    const profile2 = profileRes.data || {
       id: user.id,
       email: user.email,
       full_name: user.email?.split("@")[0] || "Customer",
       loyalty_points: 0
     };
-    const points = Number(profile.loyalty_points || 0);
+    const points = Number(profile2.loyalty_points || 0);
     let tier = "Bronze";
     let discountPercent = 0;
     let nextTierPoints = 100;
@@ -22709,15 +22709,15 @@ async function handleDashboard(req, res) {
     }
     return sendSuccess(res, {
       profile: {
-        id: profile.id,
-        full_name: profile.full_name,
-        email: profile.email || user.email,
-        phone: profile.phone,
-        address: profile.address,
-        city: profile.city,
-        postcode: profile.postcode,
+        id: profile2.id,
+        full_name: profile2.full_name,
+        email: profile2.email || user.email,
+        phone: profile2.phone,
+        address: profile2.address,
+        city: profile2.city,
+        postcode: profile2.postcode,
         loyalty_points: points,
-        created_at: profile.created_at
+        created_at: profile2.created_at
       },
       counts,
       recent_bookings: recentBookings,
@@ -23041,19 +23041,54 @@ async function handleBookings(req, res, subPath, params = {}) {
         const botToken = getEnv("TELEGRAM_BOT_TOKEN");
         const chatId = getEnv("TELEGRAM_ADMIN_CHAT_ID") || getEnv("TELEGRAM_CHAT_ID");
         if (botToken && chatId) {
-          const msg = `\u{1F9F9} *New Booking Created*
-*ID:* \`${booking.id}\`
-*Service:* ${service.name}
-*Date:* ${date} (${timeSlot})
-*Address:* ${booking.address}, ${booking.postcode}
-*Price:* \xA3${finalPrice.toFixed(2)}`;
+          const customerName = (profile?.full_name || user.email?.split("@")[0] || "Customer").trim();
+          const customerPhone = profile?.phone || "Not provided";
+          const extrasLabel = selectedExtraIds && selectedExtraIds.length > 0 ? selectedExtraIds.join(", ") : "None";
+          const recurringLabel = recurringFreq && recurringFreq !== "none" && recurringFreq !== "one_off" ? `${recurringFreq} (Active plan)` : "One-off";
+          const accessLabel = accessMethod === "home" ? "Customer at home" : accessMethod === "key_safe" ? "Key safe / Lockbox" : accessMethod === "concierge" ? "Concierge" : accessMethod === "hidden_key" ? "Hidden key" : accessMethod || "Customer at home";
+          const suppliesLabel = suppliesOption === "customer" ? "Customer provides supplies" : "Cleaner brings eco supplies";
+          const parkingLabel = parkingOption === "paid" ? "Paid parking meter nearby" : parkingOption === "none" ? "No parking (public transport only)" : "Free on-street/driveway";
+          const petsLabel = hasPets ? "Yes \u{1F43E}" : "No";
+          const lines = [
+            `\u{1F9F9} *New Booking Created*`,
+            ``,
+            `*Service:* ${service.name}`,
+            `*Date:* ${date}`,
+            `*Time Slot:* ${timeSlot} (${durationHours}h)`,
+            `*Price:* \xA3${finalPrice.toFixed(2)}${totalDiscountPercent > 0 ? ` (${totalDiscountPercent}% discount applied)` : ""}`,
+            `*Recurring:* ${recurringLabel}`,
+            `*Invoice #:* \`${invoiceNumber}\``,
+            ``,
+            `\u{1F464} *Customer Information:*`,
+            `*Name:* ${customerName}`,
+            `*Email:* ${user.email || "N/A"}`,
+            `*Phone:* ${customerPhone}`,
+            ``,
+            `\u{1F4CD} *Property & Location:*`,
+            `*Type:* ${normalizedPropertyType}`,
+            `*Layout:* ${parsedBedrooms} Bed \xB7 ${parsedBathrooms} Bath \xB7 ${parsedLivingRooms} Living`,
+            `*Address:* ${booking.address}`,
+            `*City:* ${booking.city}`,
+            `*Postcode:* ${booking.postcode}`,
+            ``,
+            `\u2699\uFE0F *Access & Instructions:*`,
+            `*Access:* ${accessLabel}`,
+            `*Cleaning Supplies:* ${suppliesLabel}`,
+            `*Parking:* ${parkingLabel}`,
+            `*Pets:* ${petsLabel}`,
+            `*Add-Ons:* ${extrasLabel}`,
+            notes && String(notes).trim() ? `*Special Notes:* "${String(notes).trim()}"` : null,
+            ``,
+            `*Booking ID:* \`${booking.id}\``
+          ].filter(Boolean);
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown" })
+            body: JSON.stringify({ chat_id: chatId, text: lines.join("\n"), parse_mode: "Markdown" })
           });
         }
-      } catch (_) {
+      } catch (tgErr) {
+        console.error("[Telegram notification error]:", tgErr);
       }
       return sendSuccess(res, { booking }, 201);
     }
@@ -23335,7 +23370,7 @@ async function handleLoyalty(req, res) {
     return sendError(res, authError || "Unauthorized", 401);
   }
   try {
-    const [{ data: profile, error }, { data: settingRow }] = await Promise.all([
+    const [{ data: profile2, error }, { data: settingRow }] = await Promise.all([
       supabase.from("profiles").select("id, full_name, loyalty_points, created_at").eq("id", user.id).single(),
       supabase.from("settings").select("value").eq("key", "loyalty_enabled").maybeSingle()
     ]);
@@ -23343,7 +23378,7 @@ async function handleLoyalty(req, res) {
     if (error && error.code !== "PGRST116") {
       return sendError(res, error.message, 500);
     }
-    const points = Number(profile?.loyalty_points || 0);
+    const points = Number(profile2?.loyalty_points || 0);
     let tier = "Bronze";
     let discountPercent = 0;
     let nextTierPoints = 100;
