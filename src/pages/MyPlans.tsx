@@ -149,127 +149,141 @@ export default function MyPlans() {
                             <div className="flex flex-wrap gap-2">
                               <span
                                 className={cn(
-                                  "text-xs font-semibold px-2.5 py-0.5 rounded-full border",
-                                  FREQ_COLORS[plan.frequency]
-                                )}
-                              >
-                                {FREQ_LABELS[plan.frequency]}
-                              </span>
-                              <span
-                                className={cn(
-                                  "text-xs font-semibold px-2.5 py-0.5 rounded-full border",
-                                  STATUS_COLORS[plan.status]
-                                )}
-                              >
-                                {plan.status.charAt(0).toUpperCase() +
-                                  plan.status.slice(1)}
-                              </span>
-                              {plan.discount_percent > 0 && (
-                                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
-                                  {plan.discount_percent}% off
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
-                              Per visit
-                            </p>
-                            <p className="text-xl font-black text-green-600">
-                              {formatCurrency(plan.price_per_visit)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid sm:grid-cols-3 gap-3 text-sm text-gray-600 mb-4">
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            {plan.start_time} – {endHour} ({plan.duration_hours}
-                            h)
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            {plan.city}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            Since{" "}
-                            {new Date(plan.created_at).toLocaleDateString(
-                              "en-GB",
-                              { month: "short", year: "numeric" }
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-xs text-gray-400 mb-4">
-                          {plan.address}, {plan.city}, {plan.postcode}
-                        </div>
-
-                        <div className="flex gap-2 flex-wrap">
-                          {plan.status === "active" ? (
-                            <button
-                              onClick={() => updateStatus(plan.id, "paused")}
-                              disabled={isLoading}
-                              className="flex items-center gap-1.5 px-4 py-2 border border-amber-200 text-amber-600 font-semibold text-xs rounded-xl hover:bg-amber-50 transition-colors disabled:opacity-50"
-                            >
-                              <Pause className="w-3.5 h-3.5" /> Pause
-                            </button>
-                          ) : plan.status === "paused" ? (
-                            <button
-                              onClick={() => updateStatus(plan.id, "active")}
-                              disabled={isLoading}
-                              className="flex items-center gap-1.5 px-4 py-2 border border-green-200 text-green-600 font-semibold text-xs rounded-xl hover:bg-green-50 transition-colors disabled:opacity-50"
-                            >
-                              <Play className="w-3.5 h-3.5" /> Resume
-                            </button>
-                          ) : null}
-                          <button
-                            onClick={() => updateStatus(plan.id, "cancelled")}
-                            disabled={isLoading || plan.status === "cancelled"}
-                            className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-500 font-semibold text-xs rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
-                          >
-                            <X className="w-3.5 h-3.5" /> Cancel Plan
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {cancelledPlans.length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                  Cancelled plans
-                </p>
-                <div className="space-y-3">
-                  {cancelledPlans.map((plan) => (
-                    <div
-                      key={plan.id}
-                      className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 opacity-60"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="font-bold text-gray-900 text-sm">
-                            {plan.service_name}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {FREQ_LABELS[plan.frequency]} · {plan.city}
-                          </p>
-                        </div>
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-red-50 text-red-500 border-red-200">
-                          Cancelled
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+                                   "text-xs font-semibold px-2.5 py-0.5 rounded-full border",
+                                   FREQ_COLORS[plan.frequency]
+                                 )}
+                               >
+                                 {FREQ_LABELS[plan.frequency]}
+                               </span>
+                               <span
+                                 className={cn(
+                                   "text-xs font-semibold px-2.5 py-0.5 rounded-full border",
+                                   STATUS_COLORS[plan.status]
+                                 )}
+                               >
+                                 {plan.status.charAt(0).toUpperCase() +
+                                   plan.status.slice(1)}
+                               </span>
+                               {plan.discount_percent > 0 && (
+                                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
+                                   {plan.discount_percent}% off
+                                 </span>
+                               )}
+                             </div>
+                           </div>
+                           <div className="text-right">
+                             <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
+                               Per visit
+                             </p>
+                             <p className="text-xl font-black text-green-600">
+                               {formatCurrency(plan.price_per_visit)}
+                             </p>
+                           </div>
+                         </div>
+ 
+                         <div className="grid sm:grid-cols-3 gap-3 text-sm text-gray-600 mb-4">
+                           <div className="flex items-center gap-2">
+                             <Clock className="w-3.5 h-3.5 text-gray-400" />
+                             {plan.start_time} – {endHour} ({plan.duration_hours}
+                             h)
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                             {plan.city}
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                             {plan.next_booking_date ? (
+                               <span>
+                                 Next:{" "}
+                                 <strong className="text-gray-900">
+                                   {new Date(plan.next_booking_date).toLocaleDateString(
+                                     "en-GB",
+                                     { day: "numeric", month: "short", year: "numeric" }
+                                   )}
+                                 </strong>
+                               </span>
+                             ) : (
+                               <span>
+                                 Since{" "}
+                                 {new Date(plan.created_at).toLocaleDateString(
+                                   "en-GB",
+                                   { month: "short", year: "numeric" }
+                                 )}
+                               </span>
+                             )}
+                           </div>
+                         </div>
+ 
+                         <div className="text-xs text-gray-400 mb-4">
+                           {plan.address}, {plan.city}, {plan.postcode}
+                         </div>
+ 
+                         <div className="flex gap-2 flex-wrap">
+                           {plan.status === "active" ? (
+                             <button
+                               onClick={() => updateStatus(plan.id, "paused")}
+                               disabled={isLoading}
+                               className="flex items-center gap-1.5 px-4 py-2 border border-amber-200 text-amber-600 font-semibold text-xs rounded-xl hover:bg-amber-50 transition-colors disabled:opacity-50"
+                             >
+                               <Pause className="w-3.5 h-3.5" /> Pause
+                             </button>
+                           ) : plan.status === "paused" ? (
+                             <button
+                               onClick={() => updateStatus(plan.id, "active")}
+                               disabled={isLoading}
+                               className="flex items-center gap-1.5 px-4 py-2 border border-green-200 text-green-600 font-semibold text-xs rounded-xl hover:bg-green-50 transition-colors disabled:opacity-50"
+                             >
+                               <Play className="w-3.5 h-3.5" /> Resume
+                             </button>
+                           ) : null}
+                           <button
+                             onClick={() => updateStatus(plan.id, "cancelled")}
+                             disabled={isLoading || plan.status === "cancelled"}
+                             className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-500 font-semibold text-xs rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                           >
+                             <X className="w-3.5 h-3.5" /> Cancel Plan
+                           </button>
+                         </div>
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+             )}
+ 
+             {cancelledPlans.length > 0 && (
+               <div>
+                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                   Cancelled plans
+                 </p>
+                 <div className="space-y-3">
+                   {cancelledPlans.map((plan) => (
+                     <div
+                       key={plan.id}
+                       className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 opacity-60"
+                     >
+                       <div className="flex items-center justify-between gap-4">
+                         <div>
+                           <p className="font-bold text-gray-900 text-sm">
+                             {plan.service_name}
+                           </p>
+                           <p className="text-xs text-gray-400 mt-0.5">
+                             {FREQ_LABELS[plan.frequency]} · {plan.city}
+                           </p>
+                         </div>
+                         <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-red-50 text-red-500 border-red-200">
+                           Cancelled
+                         </span>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             )}
+           </>
+         )}
+       </div>
+     </div>
+   );
+ }

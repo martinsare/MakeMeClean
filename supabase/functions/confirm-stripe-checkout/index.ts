@@ -12,7 +12,21 @@ const json = (status: number, data: unknown) =>
 
 function internalHeaders() {
   const token = Deno.env.get("NOTIFICATIONS_INTERNAL_TOKEN");
-  return token ? { "x-internal-token": token } : null;
+  return token ? { "x-internal-token": token } : undefined;
+}
+
+function calculateNextDate(currentDateStr: string, frequency: string): string {
+  const d = new Date(currentDateStr);
+  if (frequency === "weekly") {
+    d.setDate(d.getDate() + 7);
+  } else if (frequency === "fortnightly" || frequency === "biweekly") {
+    d.setDate(d.getDate() + 14);
+  } else if (frequency === "monthly") {
+    d.setMonth(d.getMonth() + 1);
+  } else {
+    d.setDate(d.getDate() + 7);
+  }
+  return d.toISOString().split("T")[0];
 }
 
 Deno.serve(async (req) => {
@@ -33,7 +47,9 @@ Deno.serve(async (req) => {
     if (!token) return json(401, { ok: false, error: "Unauthorised" });
 
     const { bookingId, sessionId } = (await req.json()) as { bookingId?: string; sessionId?: string };
-    if (!bookingId || !sessionId) return json(400, { ok: false, error: "bookingId and sessionId are required" });
+    if (!bookingId || !sessionId) {
+      return json(400, { ok: false, error: "bookingId and sessionId are required" });
+    }
 
     const supabase = createClient(supabaseUrl, serviceKey);
     const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
@@ -43,7 +59,7 @@ Deno.serve(async (req) => {
 
     const { data: booking, error: bookingErr } = await supabase
       .from("bookings")
-      .select("id, user_id, payment_status")
+      .select("id, user_id, date, payment_status, recurring_plan_id, recurring_freq")
       .eq("id", bookingId)
       .single();
 
@@ -52,7 +68,7 @@ Deno.serve(async (req) => {
     if (booking.payment_status === "paid") return json(200, { ok: true, paid: true });
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["payment_intent.latest_charge"],
+      expand: ["payment_intent.latest_charge", "payment_intent.payment_method", "customer"],
     });
 
     const sessionBookingId = session.metadata?.booking_id ?? session.client_reference_id ?? "";
@@ -68,6 +84,10 @@ Deno.serve(async (req) => {
       typeof session.payment_intent === "string" ? null : session.payment_intent;
     const latestCharge = paymentIntent?.latest_charge;
     const chargeId = typeof latestCharge === "string" ? latestCharge : latestCharge?.id ?? null;
+    const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
+    const paymentMethodId = paymentIntent?.payment_method
+      ? (typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : paymentIntent.payment_method.id)
+      : null;
 
     const { error: updateErr } = await supabase
       .from("bookings")
@@ -80,6 +100,32 @@ Deno.serve(async (req) => {
       .eq("id", booking.id);
 
     if (updateErr) return json(500, { ok: false, error: updateErr.message });
+
+    // Store customer and default payment method in profiles
+    if (customerId || paymentMethodId) {
+      const profileUpdates: Record<string, string> = {};
+      if (customerId) profileUpdates.stripe_customer_id = customerId;
+      if (paymentMethodId) profileUpdates.stripe_payment_method_id = paymentMethodId;
+      await supabase.from("profiles").update(profileUpdates).eq("id", userData.user.id);
+    }
+
+    // If this booking is associated with a recurring plan, link payment credentials and initialize next schedule
+    const planId = booking.recurring_plan_id || session.metadata?.recurring_plan_id;
+    if (planId) {
+      const { data: plan } = await supabase.from("recurring_plans").select("frequency").eq("id", planId).single();
+      const nextDate = calculateNextDate(booking.date, plan?.frequency || booking.recurring_freq || "weekly");
+      await supabase
+        .from("recurring_plans")
+        .update({
+          stripe_customer_id: customerId,
+          stripe_payment_method_id: paymentMethodId,
+          next_booking_date: nextDate,
+          last_booked_at: new Date().toISOString(),
+          last_booking_id: booking.id,
+          failure_count: 0,
+        })
+        .eq("id", planId);
+    }
 
     const notificationHeaders = internalHeaders();
     if (notificationHeaders) {

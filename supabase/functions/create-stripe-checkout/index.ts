@@ -22,10 +22,6 @@ function sameSiteOrigin(a: string, b: string) {
   return a === b || withoutWww(a) === withoutWww(b);
 }
 
-function getSlotStart(timeSlot: string | null | undefined) {
-  return timeSlot?.match(/\b(\d{2}:\d{2})\b/)?.[1] ?? null;
-}
-
 function isPayableBooking(date: string, status: string | null | undefined) {
   if (status === "cancelled") return false;
   const nowParts = new Intl.DateTimeFormat("en-GB", {
@@ -39,6 +35,40 @@ function isPayableBooking(date: string, status: string | null | undefined) {
   const today = `${part("year")}-${part("month")}-${part("day")}`;
 
   return date >= today;
+}
+
+async function getOrCreateStripeCustomer(
+  stripe: Stripe,
+  supabase: any,
+  userId: string,
+  email: string,
+  name?: string | null
+): Promise<string> {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("stripe_customer_id, full_name")
+    .eq("id", userId)
+    .single();
+
+  if (profile?.stripe_customer_id) {
+    return profile.stripe_customer_id;
+  }
+
+  // Create new Stripe customer
+  const customer = await stripe.customers.create({
+    email,
+    name: name || profile?.full_name || undefined,
+    metadata: {
+      supabase_user_id: userId,
+    },
+  });
+
+  await supabase
+    .from("profiles")
+    .update({ stripe_customer_id: customer.id })
+    .eq("id", userId);
+
+  return customer.id;
 }
 
 Deno.serve(async (req) => {
@@ -75,7 +105,7 @@ Deno.serve(async (req) => {
 
     const { data: booking, error: bookingErr } = await supabase
       .from("bookings")
-      .select("id, user_id, service_name, date, time_slot, price, invoice_number, status, payment_status")
+      .select("id, user_id, service_name, date, time_slot, price, invoice_number, status, payment_status, recurring_plan_id, recurring_freq")
       .eq("id", bookingId)
       .single();
 
@@ -93,10 +123,35 @@ Deno.serve(async (req) => {
       return json(400, { ok: false, error: "Invalid booking amount" });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    // Determine if this booking is part of a recurring plan
+    const isRecurring = Boolean(
+      booking.recurring_plan_id ||
+      (booking.recurring_freq && !["none", "one_off"].includes(booking.recurring_freq))
+    );
+
+    // Get or create customer ID in Stripe for tracking and recurring billing
+    const userEmail = userData.user.email || "";
+    const customerId = userEmail ? await getOrCreateStripeCustomer(stripe, supabase, userData.user.id, userEmail) : undefined;
+
+    const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = {
+      metadata: {
+        booking_id: booking.id,
+        user_id: userData.user.id,
+        invoice_number: booking.invoice_number ?? booking.id,
+        recurring_plan_id: booking.recurring_plan_id ?? "",
+      },
+    };
+
+    // If recurring, setup payment method for future off-session charges
+    if (isRecurring) {
+      paymentIntentData.setup_future_usage = "off_session";
+    }
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: "payment",
       client_reference_id: booking.id,
-      customer_email: userData.user.email ?? undefined,
+      customer: customerId,
+      customer_email: customerId ? undefined : (userEmail || undefined),
       line_items: [
         {
           quantity: 1,
@@ -105,26 +160,23 @@ Deno.serve(async (req) => {
             unit_amount: amount,
             product_data: {
               name: `MakeMeClean - ${booking.service_name}`,
-              description: `${booking.date} - ${booking.time_slot}`,
+              description: `${booking.date} - ${booking.time_slot}${isRecurring ? " (Recurring Plan)" : ""}`,
             },
           },
         },
       ],
-      payment_intent_data: {
-        metadata: {
-          booking_id: booking.id,
-          user_id: userData.user.id,
-          invoice_number: booking.invoice_number ?? booking.id,
-        },
-      },
+      payment_intent_data: paymentIntentData,
       metadata: {
         booking_id: booking.id,
         user_id: userData.user.id,
         invoice_number: booking.invoice_number ?? booking.id,
+        recurring_plan_id: booking.recurring_plan_id ?? "",
       },
       success_url: `${appOrigin}/pay/${booking.id}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appOrigin}/bookings/${booking.id}`,
-    });
+    };
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     if (!session.url) {
       return json(500, { ok: false, error: "Stripe did not return a checkout URL" });

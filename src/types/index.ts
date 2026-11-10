@@ -174,6 +174,13 @@ export interface RecurringPlan {
   notes?: string | null;
   status: "active" | "paused" | "cancelled";
   created_at: string;
+  next_booking_date?: string | null;
+  last_booked_at?: string | null;
+  last_booking_id?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_payment_method_id?: string | null;
+  failure_count?: number | null;
+  last_failure_reason?: string | null;
   profiles?: { full_name: string | null; email?: string | null } | null;
 }
 

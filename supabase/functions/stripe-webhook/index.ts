@@ -12,7 +12,21 @@ const json = (status: number, data: unknown) =>
 
 function internalHeaders() {
   const token = Deno.env.get("NOTIFICATIONS_INTERNAL_TOKEN");
-  return token ? { "x-internal-token": token } : null;
+  return token ? { "x-internal-token": token } : undefined;
+}
+
+function calculateNextDate(currentDateStr: string, frequency: string): string {
+  const d = new Date(currentDateStr);
+  if (frequency === "weekly") {
+    d.setDate(d.getDate() + 7);
+  } else if (frequency === "fortnightly" || frequency === "biweekly") {
+    d.setDate(d.getDate() + 14);
+  } else if (frequency === "monthly") {
+    d.setMonth(d.getMonth() + 1);
+  } else {
+    d.setDate(d.getDate() + 7);
+  }
+  return d.toISOString().split("T")[0];
 }
 
 Deno.serve(async (req) => {
@@ -30,7 +44,9 @@ Deno.serve(async (req) => {
     }
 
     const signature = req.headers.get("Stripe-Signature");
-    if (!signature) return json(400, { ok: false, error: "Missing Stripe signature" });
+    if (!signature) {
+      return json(400, { ok: false, error: "Missing Stripe-Signature header" });
+    }
 
     const payload = await req.text();
     const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
@@ -47,18 +63,26 @@ Deno.serve(async (req) => {
       const supabase = createClient(supabaseUrl, serviceKey);
       const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : null;
       let chargeId: string | null = null;
+      let paymentMethodId: string | null = null;
 
       if (paymentIntentId) {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
-          expand: ["latest_charge"],
+          expand: ["latest_charge", "payment_method"],
         });
         const latestCharge = paymentIntent.latest_charge;
         chargeId = typeof latestCharge === "string" ? latestCharge : latestCharge?.id ?? null;
+        if (paymentIntent.payment_method) {
+          paymentMethodId = typeof paymentIntent.payment_method === "string"
+            ? paymentIntent.payment_method
+            : paymentIntent.payment_method.id;
+        }
       }
+
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
 
       const { data: booking, error: bookingErr } = await supabase
         .from("bookings")
-        .select("id, user_id, payment_status")
+        .select("id, user_id, date, payment_status, recurring_plan_id, recurring_freq")
         .eq("id", bookingId)
         .single();
 
@@ -88,99 +112,59 @@ Deno.serve(async (req) => {
         return json(500, { ok: false, error: updateErr.message });
       }
 
-      const notificationHeaders = internalHeaders();
+      // Store customer and payment method in profile
+      if (customerId || paymentMethodId) {
+        const profileUpdates: Record<string, string> = {};
+        if (customerId) profileUpdates.stripe_customer_id = customerId;
+        if (paymentMethodId) profileUpdates.stripe_payment_method_id = paymentMethodId;
+        await supabase.from("profiles").update(profileUpdates).eq("id", booking.user_id);
+      }
 
-      if (booking.payment_status !== "paid") {
+      // If linked to a recurring plan, update plan credentials and advance next schedule
+      const planId = booking.recurring_plan_id || session.metadata?.recurring_plan_id;
+      if (planId) {
+        const { data: plan } = await supabase.from("recurring_plans").select("frequency").eq("id", planId).single();
+        const nextDate = calculateNextDate(booking.date, plan?.frequency || booking.recurring_freq || "weekly");
+        await supabase
+          .from("recurring_plans")
+          .update({
+            stripe_customer_id: customerId,
+            stripe_payment_method_id: paymentMethodId,
+            next_booking_date: nextDate,
+            last_booked_at: new Date().toISOString(),
+            last_booking_id: booking.id,
+            failure_count: 0,
+          })
+          .eq("id", planId);
+      }
+
+      const notificationHeaders = internalHeaders();
+      if (notificationHeaders) {
         try {
-          if (notificationHeaders) {
-            await supabase.functions.invoke("notifications", {
-              body: { type: "booking_confirmation", bookingId },
-              headers: notificationHeaders,
-            });
-          } else {
-            console.warn("[stripe-webhook] NOTIFICATIONS_INTERNAL_TOKEN missing; skipping confirmation email");
-          }
+          await supabase.functions.invoke("notifications", {
+            body: { type: "booking_confirmation", bookingId: booking.id },
+            headers: notificationHeaders,
+          });
         } catch (e) {
           console.error("[stripe-webhook] booking_confirmation failed:", e);
         }
 
         try {
-          if (notificationHeaders) {
-            await supabase.functions.invoke("notifications", {
-              body: { type: "payment_receipt", bookingId },
-              headers: notificationHeaders,
-            });
-          } else {
-            console.warn("[stripe-webhook] NOTIFICATIONS_INTERNAL_TOKEN missing; skipping receipt email");
-          }
+          await supabase.functions.invoke("notifications", {
+            body: { type: "payment_receipt", bookingId: booking.id },
+            headers: notificationHeaders,
+          });
         } catch (e) {
           console.error("[stripe-webhook] payment_receipt failed:", e);
         }
       }
+
+      return json(200, { ok: true, processed: true });
     }
 
-    if (event.type === "charge.dispute.created" || event.type === "charge.dispute.updated" || event.type === "charge.dispute.closed") {
-      const dispute = event.data.object as Stripe.Dispute;
-      const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id ?? null;
-      if (!chargeId) return json(200, { ok: true, ignored: true });
-
-      const supabase = createClient(supabaseUrl, serviceKey);
-      const { data: booking, error: bookingErr } = await supabase
-        .from("bookings")
-        .select("id, user_id, stripe_payment_intent_id, stripe_charge_id, payment_status, price")
-        .eq("stripe_charge_id", chargeId)
-        .maybeSingle();
-
-      if (bookingErr || !booking) return json(200, { ok: true, ignored: true });
-
-      if (event.type === "charge.dispute.created" || event.type === "charge.dispute.updated") {
-        await supabase.from("bookings").update({ payment_status: "disputed" }).eq("id", booking.id);
-
-        const { data: existing } = await supabase
-          .from("refund_requests")
-          .select("id")
-          .eq("booking_id", booking.id)
-          .eq("source", "stripe_dispute")
-          .eq("status", "pending")
-          .maybeSingle();
-
-        if (!existing) {
-          await supabase.from("refund_requests").insert({
-            booking_id: booking.id,
-            user_id: booking.user_id,
-            reason: `Stripe dispute opened${dispute.reason ? `: ${dispute.reason}` : ""}`,
-            source: "stripe_dispute",
-            stripe_charge_id: chargeId,
-            stripe_payment_intent_id: booking.stripe_payment_intent_id ?? null,
-            stripe_dispute_id: dispute.id,
-          });
-        }
-      }
-
-      if (event.type === "charge.dispute.closed") {
-        await supabase
-          .from("bookings")
-          .update({
-            payment_status: dispute.status === "won" ? "paid" : "refunded",
-          })
-          .eq("id", booking.id);
-
-        await supabase
-          .from("refund_requests")
-          .update({
-            status: dispute.status === "won" ? "rejected" : "approved",
-            processed_at: new Date().toISOString(),
-            admin_notes: `Stripe dispute closed: ${dispute.status}`,
-          })
-          .eq("booking_id", booking.id)
-          .eq("source", "stripe_dispute")
-          .eq("status", "pending");
-      }
-    }
-
-    return json(200, { ok: true });
+    return json(200, { ok: true, ignored: true });
   } catch (e) {
     console.error("[stripe-webhook]", e);
-    return json(400, { ok: false, error: String((e as Error)?.message ?? e) });
+    return json(500, { ok: false, error: String((e as Error)?.message ?? e) });
   }
 });
