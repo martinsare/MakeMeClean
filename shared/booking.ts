@@ -12,6 +12,94 @@ export const START_HOURS = [
   "17:00",
 ] as string[];
 
+export const BOOKING_DAYS = [
+  { key: "mon", label: "Monday", short: "Mon" },
+  { key: "tue", label: "Tuesday", short: "Tue" },
+  { key: "wed", label: "Wednesday", short: "Wed" },
+  { key: "thu", label: "Thursday", short: "Thu" },
+  { key: "fri", label: "Friday", short: "Fri" },
+  { key: "sat", label: "Saturday", short: "Sat" },
+  { key: "sun", label: "Sunday", short: "Sun" },
+] as const;
+
+export type BookingDayKey = (typeof BOOKING_DAYS)[number]["key"];
+
+export interface DayAvailabilityConfig {
+  enabled: boolean;
+  slots: string[];
+}
+
+export type WeeklyAvailabilitySchedule = Record<BookingDayKey, DayAvailabilityConfig>;
+
+export const DEFAULT_WEEKLY_AVAILABILITY: WeeklyAvailabilitySchedule = {
+  mon: { enabled: true, slots: [...START_HOURS] },
+  tue: { enabled: true, slots: [...START_HOURS] },
+  wed: { enabled: true, slots: [...START_HOURS] },
+  thu: { enabled: true, slots: [...START_HOURS] },
+  fri: { enabled: true, slots: [...START_HOURS] },
+  sat: { enabled: true, slots: [...START_HOURS] },
+  sun: { enabled: true, slots: [...START_HOURS] },
+};
+
+/**
+ * Safely parses the weekly availability schedule JSON. Falls back to default schedule.
+ */
+export function parseWeeklyAvailability(value: unknown): WeeklyAvailabilitySchedule {
+  if (!value) return DEFAULT_WEEKLY_AVAILABILITY;
+
+  let raw = value;
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return DEFAULT_WEEKLY_AVAILABILITY;
+    }
+  }
+
+  if (!raw || typeof raw !== "object") return DEFAULT_WEEKLY_AVAILABILITY;
+
+  const result: Partial<WeeklyAvailabilitySchedule> = {};
+  for (const day of BOOKING_DAYS) {
+    const dayData = (raw as Record<string, unknown>)[day.key];
+    if (dayData && typeof dayData === "object") {
+      const enabled = (dayData as { enabled?: boolean }).enabled !== false;
+      const rawSlots = (dayData as { slots?: unknown }).slots;
+      const validSlots = Array.isArray(rawSlots)
+        ? rawSlots.filter((s): s is string => typeof s === "string" && START_HOURS.includes(s))
+        : [...START_HOURS];
+
+      result[day.key] = {
+        enabled,
+        slots: validSlots.length > 0 ? validSlots : [...START_HOURS],
+      };
+    } else {
+      result[day.key] = { enabled: true, slots: [...START_HOURS] };
+    }
+  }
+
+  return result as WeeklyAvailabilitySchedule;
+}
+
+/**
+ * Resolves the 3-letter day key ("mon".."sun") from a "YYYY-MM-DD" date string.
+ */
+export function getDayKeyFromDateStr(dateStr: string): BookingDayKey {
+  if (!dateStr || !dateStr.includes("-")) return "mon";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  const dayIndex = dt.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+  const map: Record<number, BookingDayKey> = {
+    0: "sun",
+    1: "mon",
+    2: "tue",
+    3: "wed",
+    4: "thu",
+    5: "fri",
+    6: "sat",
+  };
+  return map[dayIndex] || "mon";
+}
+
 export const MIN_DURATION_HOURS = 1.5;
 export const MAX_DURATION_HOURS = 12;
 export const DURATION_STEP_HOURS = 0.5;

@@ -18,10 +18,17 @@ export {
   isBookingStartTimePassed,
   isBookingEndTimePassed,
   START_HOURS,
+  BOOKING_DAYS,
+  DEFAULT_WEEKLY_AVAILABILITY,
+  parseWeeklyAvailability,
+  getDayKeyFromDateStr,
 } from '../../shared/booking.js';
 export type {
   BookingDurationMultipliers,
   BookingExtra,
+  BookingDayKey,
+  DayAvailabilityConfig,
+  WeeklyAvailabilitySchedule,
 } from '../../shared/booking.js';
 
 export interface AuthenticatedUser {

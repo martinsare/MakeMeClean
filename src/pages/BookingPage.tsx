@@ -46,6 +46,11 @@ import {
   walesCities,
   fetchActiveCities,
   Service,
+  BOOKING_DAYS,
+  WeeklyAvailabilitySchedule,
+  DEFAULT_WEEKLY_AVAILABILITY,
+  parseWeeklyAvailability,
+  getDayKeyFromDateStr,
 } from "@/lib/services";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -367,6 +372,7 @@ export default function BookingPage() {
   const [bookingDisabledMessage, setBookingDisabledMessage] = useState(
     "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly."
   );
+  const [weeklySchedule, setWeeklySchedule] = useState<WeeklyAvailabilitySchedule>(DEFAULT_WEEKLY_AVAILABILITY);
 
   const bookingConfig = getServiceBookingConfig(
     selectedService?.id || selectedService?.name || ""
@@ -569,6 +575,7 @@ export default function BookingPage() {
         "room_calc_living_hours",
         "booking_enabled",
         "booking_disabled_message",
+        "booking_availability_schedule",
       ])
       .then(({ data, error: settingsError }) => {
         if (settingsError) {
@@ -594,6 +601,9 @@ export default function BookingPage() {
         if (map.has("booking_disabled_message")) {
           const msg = map.get("booking_disabled_message") as string;
           if (msg && msg.trim()) setBookingDisabledMessage(msg.trim());
+        }
+        if (map.has("booking_availability_schedule")) {
+          setWeeklySchedule(parseWeeklyAvailability(map.get("booking_availability_schedule")));
         }
         setBookingAvailabilityChecked(true);
 
@@ -755,10 +765,19 @@ export default function BookingPage() {
   const finalPrice =
     recurringPct > 0 ? totalPrice * (1 - recurringPct / 100) : totalPrice;
   const timeSlot = calcTimeSlot(startHour, durationHours);
-  const availableStartHours =
-    date === localTodayStr && remainingTodaySlots.length > 0
-      ? remainingTodaySlots
-      : START_HOURS;
+  const selectedDayKey = getDayKeyFromDateStr(date || minDateStr);
+  const selectedDayConfig = weeklySchedule[selectedDayKey] || { enabled: true, slots: [...START_HOURS] };
+  const isSelectedDayEnabled = selectedDayConfig.enabled;
+  const configuredDaySlots = selectedDayConfig.slots && selectedDayConfig.slots.length > 0
+    ? selectedDayConfig.slots
+    : [...START_HOURS];
+
+  // Filter slots for today if today is selected
+  const availableStartHours = isSelectedDayEnabled
+    ? (date === localTodayStr
+        ? configuredDaySlots.filter((h) => remainingTodaySlots.includes(h))
+        : configuredDaySlots)
+    : [];
 
   // Initialize date to min selectable date if blank or before min date
   useEffect(() => {
@@ -813,8 +832,12 @@ export default function BookingPage() {
         setError("Please choose your preferred appointment date.");
         return false;
       }
+      if (!isSelectedDayEnabled) {
+        setError("Bookings are not accepted on this day of the week. Please choose an available day.");
+        return false;
+      }
       if (availableStartHours.length === 0) {
-        setError("No future slots left today. Please select another date.");
+        setError(date === localTodayStr ? "No future slots left today. Please select another date." : "No available time slots on this day. Please select another date.");
         return false;
       }
     } else if (targetStep === 5) {
@@ -1661,28 +1684,39 @@ export default function BookingPage() {
                   onChange={(e) => setDate(e.target.value)}
                   className="input-field"
                 />
+                {!isSelectedDayEnabled && date && (
+                  <p className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
+                    <CalendarX className="w-3.5 h-3.5 shrink-0" /> We are closed for bookings on this day of the week.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1.5">
                   Start Time Slot
                 </label>
-                <select
-                  required
-                  value={startHour}
-                  onChange={(e) => setStartHour(e.target.value)}
-                  className="input-field"
-                >
-                  {availableStartHours.map((h) => (
-                    <option key={h} value={h}>
-                      {h} (Finishes at{" "}
-                      {calcTimeSlot(h, durationHours).split(" – ")[1]})
-                    </option>
-                  ))}
-                </select>
+                {availableStartHours.length > 0 ? (
+                  <select
+                    required
+                    value={startHour}
+                    onChange={(e) => setStartHour(e.target.value)}
+                    className="input-field"
+                  >
+                    {availableStartHours.map((h) => (
+                      <option key={h} value={h}>
+                        {h} (Finishes at{" "}
+                        {calcTimeSlot(h, durationHours).split(" – ")[1]})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="px-3.5 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-xs text-gray-500 font-medium">
+                    {isSelectedDayEnabled ? "No slots available today" : "Closed on this day"}
+                  </div>
+                )}
               </div>
             </div>
 
-            {date && (
+            {date && isSelectedDayEnabled && availableStartHours.length > 0 && (
               <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-800 flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600" />
                 <span>

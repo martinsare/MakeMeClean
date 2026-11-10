@@ -18,6 +18,8 @@ import {
   parseDurationMultipliers,
   isBookingStartTimePassed,
   isBookingEndTimePassed,
+  parseWeeklyAvailability,
+  getDayKeyFromDateStr,
 } from '../_lib/server';
 
 const ACCEPTED_PROPERTY_TYPES: readonly string[] = [
@@ -137,6 +139,15 @@ export async function handleBookings(
           'We are currently fully booked and temporarily not accepting new bookings. Please try again later.';
         return sendError(res, disabledMsg, 403);
       }
+
+      // Check weekly day and time availability schedule configured by admin
+      const { data: scheduleSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'booking_availability_schedule')
+        .maybeSingle();
+
+      const weeklySchedule = parseWeeklyAvailability(scheduleSetting?.value);
 
       const body = req.body || {};
       const {
@@ -305,6 +316,27 @@ export async function handleBookings(
       if (!Number.isFinite(durationHours)) {
         return sendError(res, 'Booking duration must be a valid number.', 400);
       }
+
+      // Validate availability for the requested day and time slot
+      const dayKey = getDayKeyFromDateStr(String(date));
+      const dayConfig = weeklySchedule[dayKey];
+      if (!dayConfig || !dayConfig.enabled) {
+        return sendError(
+          res,
+          `We are not accepting bookings on this day. Please select an available day.`,
+          400,
+        );
+      }
+
+      const bookingStartHour = startHour || (timeSlot ? timeSlot.split(/[-–]/)[0]?.trim() : '09:00');
+      if (dayConfig.slots && dayConfig.slots.length > 0 && !dayConfig.slots.includes(bookingStartHour)) {
+        return sendError(
+          res,
+          `The selected time slot (${bookingStartHour}) is not available for bookings on this day. Available slots: ${dayConfig.slots.join(', ')}.`,
+          400,
+        );
+      }
+
       if (startHour != null && (typeof startHour !== 'string' || !/^(0[7-9]|1[0-7]):(00|30)$/.test(startHour))) {
         return sendError(res, 'Booking start time is invalid.', 400);
       }

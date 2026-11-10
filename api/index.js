@@ -22100,6 +22100,68 @@ var START_HOURS = [
   "16:00",
   "17:00"
 ];
+var BOOKING_DAYS = [
+  { key: "mon", label: "Monday", short: "Mon" },
+  { key: "tue", label: "Tuesday", short: "Tue" },
+  { key: "wed", label: "Wednesday", short: "Wed" },
+  { key: "thu", label: "Thursday", short: "Thu" },
+  { key: "fri", label: "Friday", short: "Fri" },
+  { key: "sat", label: "Saturday", short: "Sat" },
+  { key: "sun", label: "Sunday", short: "Sun" }
+];
+var DEFAULT_WEEKLY_AVAILABILITY = {
+  mon: { enabled: true, slots: [...START_HOURS] },
+  tue: { enabled: true, slots: [...START_HOURS] },
+  wed: { enabled: true, slots: [...START_HOURS] },
+  thu: { enabled: true, slots: [...START_HOURS] },
+  fri: { enabled: true, slots: [...START_HOURS] },
+  sat: { enabled: true, slots: [...START_HOURS] },
+  sun: { enabled: true, slots: [...START_HOURS] }
+};
+function parseWeeklyAvailability(value) {
+  if (!value) return DEFAULT_WEEKLY_AVAILABILITY;
+  let raw = value;
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return DEFAULT_WEEKLY_AVAILABILITY;
+    }
+  }
+  if (!raw || typeof raw !== "object") return DEFAULT_WEEKLY_AVAILABILITY;
+  const result = {};
+  for (const day of BOOKING_DAYS) {
+    const dayData = raw[day.key];
+    if (dayData && typeof dayData === "object") {
+      const enabled = dayData.enabled !== false;
+      const rawSlots = dayData.slots;
+      const validSlots = Array.isArray(rawSlots) ? rawSlots.filter((s) => typeof s === "string" && START_HOURS.includes(s)) : [...START_HOURS];
+      result[day.key] = {
+        enabled,
+        slots: validSlots.length > 0 ? validSlots : [...START_HOURS]
+      };
+    } else {
+      result[day.key] = { enabled: true, slots: [...START_HOURS] };
+    }
+  }
+  return result;
+}
+function getDayKeyFromDateStr(dateStr) {
+  if (!dateStr || !dateStr.includes("-")) return "mon";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  const dayIndex = dt.getDay();
+  const map = {
+    0: "sun",
+    1: "mon",
+    2: "tue",
+    3: "wed",
+    4: "thu",
+    5: "fri",
+    6: "sat"
+  };
+  return map[dayIndex] || "mon";
+}
 var MIN_DURATION_HOURS = 1.5;
 var MAX_DURATION_HOURS = 12;
 var DURATION_STEP_HOURS = 0.5;
@@ -22589,11 +22651,13 @@ async function handleBookingOptions(req, res) {
       fortnightly: 10,
       monthly: 5
     };
+    let schedule = parseWeeklyAvailability(null);
     if (settingsRes.data) {
       for (const row of settingsRes.data) {
         if (row.key === "discount_weekly") discounts.weekly = Number(row.value) || 15;
         if (row.key === "discount_fortnightly") discounts.fortnightly = Number(row.value) || 10;
         if (row.key === "discount_monthly") discounts.monthly = Number(row.value) || 5;
+        if (row.key === "booking_availability_schedule") schedule = parseWeeklyAvailability(row.value);
       }
     }
     const defaultCities = [
@@ -22616,6 +22680,7 @@ async function handleBookingOptions(req, res) {
       services,
       cities,
       discounts,
+      schedule,
       startHours: START_HOURS,
       minDurationHours: MIN_DURATION_HOURS,
       maxDurationHours: MAX_DURATION_HOURS,
@@ -22807,6 +22872,8 @@ async function handleBookings(req, res, subPath, params = {}) {
         const disabledMsg = bookingMessageSetting?.value?.trim() || "We are currently fully booked and temporarily not accepting new bookings. Please try again later.";
         return sendError(res, disabledMsg, 403);
       }
+      const { data: scheduleSetting } = await supabase.from("settings").select("value").eq("key", "booking_availability_schedule").maybeSingle();
+      const weeklySchedule = parseWeeklyAvailability(scheduleSetting?.value);
       const body = req.body || {};
       const {
         serviceId,
@@ -22929,6 +22996,23 @@ async function handleBookings(req, res, subPath, params = {}) {
       let timeSlot = rawTimeSlot;
       if (!Number.isFinite(durationHours)) {
         return sendError(res, "Booking duration must be a valid number.", 400);
+      }
+      const dayKey = getDayKeyFromDateStr(String(date));
+      const dayConfig = weeklySchedule[dayKey];
+      if (!dayConfig || !dayConfig.enabled) {
+        return sendError(
+          res,
+          `We are not accepting bookings on this day. Please select an available day.`,
+          400
+        );
+      }
+      const bookingStartHour = startHour || (timeSlot ? timeSlot.split(/[-–]/)[0]?.trim() : "09:00");
+      if (dayConfig.slots && dayConfig.slots.length > 0 && !dayConfig.slots.includes(bookingStartHour)) {
+        return sendError(
+          res,
+          `The selected time slot (${bookingStartHour}) is not available for bookings on this day. Available slots: ${dayConfig.slots.join(", ")}.`,
+          400
+        );
       }
       if (startHour != null && (typeof startHour !== "string" || !/^(0[7-9]|1[0-7]):(00|30)$/.test(startHour))) {
         return sendError(res, "Booking start time is invalid.", 400);

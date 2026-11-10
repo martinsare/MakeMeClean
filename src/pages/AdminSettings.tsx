@@ -15,11 +15,22 @@ import {
   Home,
   Power,
   CalendarX,
+  Calendar,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
+import {
+  START_HOURS,
+  BOOKING_DAYS,
+  WeeklyAvailabilitySchedule,
+  DEFAULT_WEEKLY_AVAILABILITY,
+  parseWeeklyAvailability,
+} from "@/lib/services";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useRole";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import { SETTING_DEFAULTS, invalidateSettingsCache } from "@/hooks/useSettings";
 
 type FormValues = {
@@ -936,15 +947,18 @@ function BookingAvailabilityControl() {
   const [message, setMessage] = useState(
     "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly."
   );
+  const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule>(DEFAULT_WEEKLY_AVAILABILITY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleSaved, setScheduleSaved] = useState(false);
 
   useEffect(() => {
     supabase
       .from("settings")
       .select("key, value")
-      .in("key", ["booking_enabled", "booking_disabled_message"])
+      .in("key", ["booking_enabled", "booking_disabled_message", "booking_availability_schedule"])
       .then(({ data }) => {
         const map = new Map<string, string>();
         for (const row of data || []) {
@@ -955,6 +969,9 @@ function BookingAvailabilityControl() {
         }
         if (map.has("booking_disabled_message")) {
           setMessage(map.get("booking_disabled_message") || "");
+        }
+        if (map.has("booking_availability_schedule")) {
+          setSchedule(parseWeeklyAvailability(map.get("booking_availability_schedule")));
         }
         setLoading(false);
       });
@@ -997,6 +1014,71 @@ function BookingAvailabilityControl() {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  const handleToggleDay = (dayKey: keyof WeeklyAvailabilitySchedule) => {
+    setSchedule((prev) => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        enabled: !prev[dayKey].enabled,
+      },
+    }));
+  };
+
+  const handleToggleSlot = (dayKey: keyof WeeklyAvailabilitySchedule, slot: string) => {
+    setSchedule((prev) => {
+      const currentSlots = prev[dayKey].slots || [];
+      const hasSlot = currentSlots.includes(slot);
+      const updatedSlots = hasSlot
+        ? currentSlots.filter((s) => s !== slot)
+        : [...currentSlots, slot].sort();
+      return {
+        ...prev,
+        [dayKey]: {
+          ...prev[dayKey],
+          slots: updatedSlots,
+        },
+      };
+    });
+  };
+
+  const handleSelectAllSlots = (dayKey: keyof WeeklyAvailabilitySchedule) => {
+    setSchedule((prev) => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        slots: [...START_HOURS],
+      },
+    }));
+  };
+
+  const handleClearAllSlots = (dayKey: keyof WeeklyAvailabilitySchedule) => {
+    setSchedule((prev) => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        slots: [],
+      },
+    }));
+  };
+
+  const handleSaveSchedule = async () => {
+    setScheduleSaving(true);
+    await supabase.from("settings").upsert(
+      [
+        {
+          key: "booking_availability_schedule",
+          value: JSON.stringify(schedule),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: "key" }
+    );
+    invalidateSettingsCache();
+    setScheduleSaving(false);
+    setScheduleSaved(true);
+    setTimeout(() => setScheduleSaved(false), 3000);
+  };
+
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
@@ -1012,11 +1094,10 @@ function BookingAvailabilityControl() {
           </div>
           <div>
             <h2 className="text-sm font-black text-gray-900">
-              Booking Availability Control
+              Booking Availability & Schedule Control
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Turn customer bookings on or off whenever you are unavailable or
-              at full capacity
+              Set which days of the week and specific time slots customers are allowed to book
             </p>
           </div>
         </div>
@@ -1027,7 +1108,7 @@ function BookingAvailabilityControl() {
               : "text-rose-700 bg-rose-50 border-rose-200"
           }`}
         >
-          {enabled ? "Accepting Bookings" : "Bookings Paused"}
+          {enabled ? "Accepting Bookings" : "All Bookings Paused"}
         </span>
       </div>
 
@@ -1037,7 +1118,8 @@ function BookingAvailabilityControl() {
             <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Master On/Off Switch */}
             <div
               className={`flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap p-4 rounded-xl border ${
                 enabled
@@ -1053,13 +1135,13 @@ function BookingAvailabilityControl() {
                     }`}
                   />
                   {enabled
-                    ? "Customer bookings are currently OPEN"
-                    : "Customer bookings are currently PAUSED"}
+                    ? "Customer bookings are OPEN"
+                    : "Customer bookings are PAUSED entirely"}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {enabled
-                    ? "Customers across Wales can view available dates and book cleaning appointments normally."
-                    : "The booking form will show a clear paused announcement to customers, preventing anyone from booking."}
+                    ? "Bookings are active according to your configured weekly days & hours schedule below."
+                    : "Overrides all days. The booking system is closed with your customized announcement."}
                 </p>
               </div>
 
@@ -1081,20 +1163,142 @@ function BookingAvailabilityControl() {
                   </>
                 ) : enabled ? (
                   <>
-                    <CalendarX className="w-4 h-4" /> Pause Bookings
+                    <CalendarX className="w-4 h-4" /> Pause All Bookings
                   </>
                 ) : (
                   <>
-                    <Power className="w-4 h-4" /> Resume Bookings
+                    <Power className="w-4 h-4" /> Resume System
                   </>
                 )}
               </button>
             </div>
 
+            {/* Weekly Days and Time Slot Availability Manager */}
+            <div className="border border-gray-200 rounded-2xl p-5 bg-white space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-green-600" />
+                    Weekly Availability (Days & Time Slots)
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Select which days and start hours are bookable by customers on the booking page.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveSchedule}
+                  disabled={scheduleSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {scheduleSaving ? (
+                    "Saving schedule..."
+                  ) : scheduleSaved ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Schedule Saved!
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" /> Save Availability Schedule
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {BOOKING_DAYS.map((day) => {
+                  const dayConf = schedule[day.key] || { enabled: true, slots: [...START_HOURS] };
+                  const isDayEnabled = dayConf.enabled;
+                  const activeSlots = dayConf.slots || [];
+
+                  return (
+                    <div
+                      key={day.key}
+                      className={cn(
+                        "rounded-xl border p-3.5 transition-all",
+                        isDayEnabled
+                          ? "bg-white border-gray-200"
+                          : "bg-gray-50/70 border-gray-200 opacity-60"
+                      )}
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDay(day.key)}
+                            className="flex items-center gap-2 group cursor-pointer text-left"
+                          >
+                            {isDayEnabled ? (
+                              <ToggleRight className="w-6 h-6 text-green-600" />
+                            ) : (
+                              <ToggleLeft className="w-6 h-6 text-gray-400" />
+                            )}
+                            <div>
+                              <span className="text-xs font-bold text-gray-900 group-hover:text-green-700">
+                                {day.label}
+                              </span>
+                              <span className="text-[10px] text-gray-500 ml-2">
+                                {isDayEnabled
+                                  ? `${activeSlots.length} slot${activeSlots.length === 1 ? "" : "s"} open`
+                                  : "Closed all day"}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {isDayEnabled && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAllSlots(day.key)}
+                              className="text-[10px] font-semibold text-green-700 hover:underline px-1.5 py-0.5"
+                            >
+                              Select All
+                            </button>
+                            <span className="text-gray-300">·</span>
+                            <button
+                              type="button"
+                              onClick={() => handleClearAllSlots(day.key)}
+                              className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 hover:underline px-1.5 py-0.5"
+                            >
+                              Clear All
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isDayEnabled && (
+                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-11 gap-1.5 pt-1 border-t border-gray-100">
+                          {START_HOURS.map((slot) => {
+                            const isSlotActive = activeSlots.includes(slot);
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => handleToggleSlot(day.key, slot)}
+                                className={cn(
+                                  "py-1.5 px-2 rounded-lg text-[11px] font-semibold text-center border transition-all",
+                                  isSlotActive
+                                    ? "bg-green-50 border-green-300 text-green-800 shadow-xs"
+                                    : "bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600"
+                                )}
+                              >
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Custom message for customers when paused */}
             <div className="border border-gray-100 rounded-xl p-4 bg-gray-50 space-y-2">
               <label className="block text-xs font-bold text-gray-700">
-                Notice displayed to customers when bookings are paused:
+                Notice displayed to customers when system is fully paused:
               </label>
               <textarea
                 value={message}

@@ -1,4 +1,16 @@
-export { calcTimeSlot, START_HOURS } from "../../shared/booking";
+export {
+  calcTimeSlot,
+  START_HOURS,
+  BOOKING_DAYS,
+  DEFAULT_WEEKLY_AVAILABILITY,
+  parseWeeklyAvailability,
+  getDayKeyFromDateStr,
+} from "../../shared/booking";
+export type {
+  BookingDayKey,
+  DayAvailabilityConfig,
+  WeeklyAvailabilitySchedule,
+} from "../../shared/booking";
 
 export interface DbService {
   id: string;

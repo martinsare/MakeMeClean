@@ -9,6 +9,7 @@ import {
   MIN_DURATION_HOURS,
   MAX_DURATION_HOURS,
   DURATION_STEP_HOURS,
+  parseWeeklyAvailability,
 } from '../_lib/server.js';
 
 export async function handleBookingOptions(req: VercelRequest, res: VercelResponse) {
@@ -43,11 +44,13 @@ export async function handleBookingOptions(req: VercelRequest, res: VercelRespon
       monthly: 5,
     };
 
+    let schedule = parseWeeklyAvailability(null);
     if (settingsRes.data) {
       for (const row of settingsRes.data) {
         if (row.key === 'discount_weekly') discounts.weekly = Number(row.value) || 15;
         if (row.key === 'discount_fortnightly') discounts.fortnightly = Number(row.value) || 10;
         if (row.key === 'discount_monthly') discounts.monthly = Number(row.value) || 5;
+        if (row.key === 'booking_availability_schedule') schedule = parseWeeklyAvailability(row.value);
       }
     }
 
@@ -64,6 +67,7 @@ export async function handleBookingOptions(req: VercelRequest, res: VercelRespon
       services,
       cities,
       discounts,
+      schedule,
       startHours: START_HOURS,
       minDurationHours: MIN_DURATION_HOURS,
       maxDurationHours: MAX_DURATION_HOURS,
