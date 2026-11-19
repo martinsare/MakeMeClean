@@ -51,6 +51,9 @@ type FormValues = {
   vat_registered: string;
   vat_number: string;
   max_bookings_per_slot: string;
+  min_booking_lead_hours: string;
+  cancellation_late_hours: string;
+  cancellation_late_refund_percent: string;
 };
 
 const FIELDS: {
@@ -144,6 +147,27 @@ const FIELDS: {
     label: "Max bookings per time slot",
     sub: "Capacity limit per date + start hour to prevent overbooking (default: 10)",
     icon: Users,
+    type: "number",
+  },
+  {
+    key: "min_booking_lead_hours",
+    label: "Minimum booking lead time (hours)",
+    sub: "Customers can only book slots starting at least this many hours in advance (Default: 5). Sooner requires calling for emergency shift.",
+    icon: Clock,
+    type: "number",
+  },
+  {
+    key: "cancellation_late_hours",
+    label: "Late cancellation window (hours)",
+    sub: "Cancellations within this many hours of booking start time are subject to the late cancellation fee (Default: 3 hours).",
+    icon: AlertCircle,
+    type: "number",
+  },
+  {
+    key: "cancellation_late_refund_percent",
+    label: "Late cancellation refund percentage (%)",
+    sub: "Percentage of booking price refunded when cancelled within the late cancellation window (Default: 75% refund / 25% fee).",
+    icon: Receipt,
     type: "number",
   },
 ];
@@ -1631,6 +1655,16 @@ export default function AdminSettings() {
         "max_bookings_per_slot",
       ] as (keyof FormValues)[],
     },
+    {
+      title: "Cancellation Policy & Advance Booking Lead Time",
+      subtitle:
+        "Configure customer advance booking cutoff, emergency booking call-out, late cancellation windows, and customer refund tiers.",
+      keys: [
+        "min_booking_lead_hours",
+        "cancellation_late_hours",
+        "cancellation_late_refund_percent",
+      ] as (keyof FormValues)[],
+    },
   ];
 
   return (
@@ -1672,18 +1706,36 @@ export default function AdminSettings() {
           {/* Booking Availability On/Off Switch - Placed right at the TOP */}
           <BookingAvailabilityControl />
 
-          {sections.map((section) => (
-            <div
-              key={section.title}
-              className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden"
-            >
-              <div className="px-6 py-5 border-b border-gray-100">
-                <h2 className="text-sm font-black text-gray-900">
-                  {section.title}
-                </h2>
-                <p className="text-xs text-gray-400 mt-1">{section.subtitle}</p>
-              </div>
-              <div className="divide-y divide-gray-50">
+          {sections.map((section) => {
+            const sectionDirty = section.keys.some((k) => values[k] !== original[k]);
+            return (
+              <div
+                key={section.title}
+                className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden"
+              >
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-black text-gray-900">
+                      {section.title}
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-1">{section.subtitle}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={saving || !sectionDirty || fetching}
+                    className={cn(
+                      "flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-all shrink-0",
+                      sectionDirty
+                        ? "bg-green-600 hover:bg-green-700 text-white shadow-xs cursor-pointer"
+                        : "bg-gray-100 text-gray-400 cursor-not-allowed opacity-60"
+                    )}
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    {saving ? "Saving…" : sectionDirty ? "Save Section" : "Saved"}
+                  </button>
+                </div>
+                <div className="divide-y divide-gray-50">
                 {section.keys.map((key) => {
                   const field = FIELDS.find((f) => f.key === key)!;
                   const Icon = field.icon;
@@ -1735,8 +1787,35 @@ export default function AdminSettings() {
                   );
                 })}
               </div>
+              <div className="px-6 py-3.5 bg-gray-50/70 border-t border-gray-100 flex items-center justify-between gap-4">
+                <span className="text-xs text-gray-500 font-medium">
+                  {sectionDirty ? (
+                    <span className="text-amber-700 font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      Unsaved changes in this card
+                    </span>
+                  ) : (
+                    "Card settings are up to date"
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={saving || !sectionDirty || fetching}
+                  className={cn(
+                    "flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-all",
+                    sectionDirty
+                      ? "bg-green-600 hover:bg-green-700 text-white shadow-xs cursor-pointer"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed opacity-60"
+                  )}
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {saving ? "Saving…" : sectionDirty ? "Save Section" : "Saved"}
+                </button>
+              </div>
             </div>
-          ))}
+          );
+        })}
 
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex gap-3">
             <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />

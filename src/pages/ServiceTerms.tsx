@@ -68,32 +68,29 @@ export default function ServiceTerms() {
             </h2>
             <p className="text-gray-600 leading-relaxed mb-4">Please ensure:</p>
             <ul className="list-disc list-inside space-y-2 text-gray-600">
-              <li>A safe access point is available (or key arranged)</li>
-              <li>Valuables are secured or removed</li>
-              <li>Pets are in a safe, separate area (advise us of any pets)</li>
+              <li>An adult client or designated representative (18+) is present to grant access</li>
+              <li>Valuables and sensitive items are securely stored or removed</li>
+              <li>Pets are in a safe, separate area (advise us of any pets in advance)</li>
               <li>Any fragile items are removed or protected</li>
               <li>A clear, uncluttered path is available for the cleaner</li>
-              <li>Adequate lighting in all areas to be cleaned</li>
+              <li>Adequate lighting and running water/electricity are available in all areas to be cleaned</li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Access & Entry
+              Access & Presence Requirement
             </h2>
             <ul className="list-disc list-inside space-y-2 text-gray-600">
-              <li>You must provide access at the agreed time</li>
               <li>
-                If access is delayed by more than 15 minutes, the cleaner may
-                reschedule
-              </li>
-              <li>Delayed bookings may incur additional charges</li>
-              <li>
-                For recurring bookings, you may arrange a safe key access point
+                <strong>On-site presence required:</strong> For the security of your home and the safety and peace of mind of our cleaning professionals, someone (the client or an authorised adult representative) must always be on the premises to admit the cleaner and remain present during the service.
               </li>
               <li>
-                We take no responsibility for items lost or damaged due to
-                unsecured entry
+                <strong>No unaccompanied entry:</strong> MakeMeClean does not enter unattended properties alone or access lockboxes/hidden keys without an adult present. This protects both client property and our staff against disputed claims or missing item allegations.
+              </li>
+              <li>You must provide access at the agreed booking start time.</li>
+              <li>
+                If entry is delayed by more than 20 minutes due to no representative being available, the appointment will be deemed a customer no-show and cancelled under our late cancellation policy.
               </li>
             </ul>
           </section>
@@ -118,9 +115,9 @@ export default function ServiceTerms() {
               </p>
               <p>
                 <strong className="text-gray-900">
-                  No refund for customer cancellations:
+                  Cancellation & refund policy:
                 </strong>{" "}
-                Within 3 hours of service (see Cancellation Policy)
+                75% refund for cancellations within 3 hours of start time (see Cancellation Policy); 100% full refund when cancelled more than 3 hours in advance
               </p>
               <p>
                 <strong className="text-gray-900">Additional time:</strong> If

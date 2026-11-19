@@ -2,13 +2,17 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation, Link } from "wouter";
 import { ArrowLeft, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useSettings } from "@/hooks/useSettings";
 import { supabase } from "@/lib/supabase";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { Booking } from "@/types";
 import { api } from "@/lib/apiClient";
+import { calculateCancellationRefund } from "@/lib/services";
+import { getHoursUntilBookingStart } from "@/lib/constants";
 
 export default function BookingRefundRequest() {
   const { user, loading } = useAuth();
+  const settings = useSettings();
   const [, setLocation] = useLocation();
   const params = useParams<{ bookingId: string }>();
 
@@ -178,6 +182,65 @@ export default function BookingRefundRequest() {
                   </div>
                 </div>
               </div>
+
+              {(() => {
+                const lateHours = Number(settings.cancellation_late_hours) || 3;
+                const lateRefundPercent = Number(settings.cancellation_late_refund_percent) || 75;
+                const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
+                const refundCalc = calculateCancellationRefund({
+                  bookingPrice: Number(booking.price),
+                  alreadyRefunded: Number(booking.refunded_amount || 0),
+                  hoursUntilStart: hoursUntil,
+                  lateWindowHours: lateHours,
+                  lateRefundPercent: lateRefundPercent,
+                });
+
+                return (
+                  <div
+                    className={`p-4 rounded-2xl border mb-8 text-xs leading-relaxed ${
+                      refundCalc.isLate
+                        ? "bg-amber-50/90 border-amber-200 text-amber-950"
+                        : "bg-emerald-50/90 border-emerald-200 text-emerald-950"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-bold text-sm mb-1">
+                      <AlertCircle
+                        className={`w-4 h-4 shrink-0 ${
+                          refundCalc.isLate ? "text-amber-600" : "text-emerald-600"
+                        }`}
+                      />
+                      <span>
+                        {refundCalc.isLate
+                          ? `Late Cancellation Notice (${refundCalc.refundPercent}% Refund)`
+                          : `Eligible for Full Refund (${refundCalc.refundPercent}%)`}
+                      </span>
+                    </div>
+                    <p className="mt-1">
+                      {refundCalc.isLate ? (
+                        <>
+                          This clean is scheduled to start in{" "}
+                          <strong>
+                            {Math.max(0, refundCalc.hoursUntilStart || 0).toFixed(1)} hours
+                          </strong>{" "}
+                          (within our {lateHours}-hour cancellation window). Per our cancellation policy, you are eligible for a{" "}
+                          <strong>
+                            {refundCalc.refundPercent}% refund ({formatCurrency(refundCalc.eligibleAmount)})
+                          </strong>
+                          . A {refundCalc.feePercent}% late fee applies to cover reserved cleaner time.
+                        </>
+                      ) : (
+                        <>
+                          This appointment is scheduled more than {lateHours} hours in advance. You are eligible for a{" "}
+                          <strong>
+                            100% full refund ({formatCurrency(refundCalc.eligibleAmount)})
+                          </strong>{" "}
+                          upon cancellation review.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                );
+              })()}
 
               <form onSubmit={handleSubmit}>
                 <div className="mb-6">

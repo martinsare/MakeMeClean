@@ -8,6 +8,10 @@ import {
   calcTimeSlot,
   calculateDurationHours,
   calculateBookingPrice,
+  calculateCancellationRefund,
+  DEFAULT_MIN_BOOKING_LEAD_HOURS,
+  DEFAULT_CANCELLATION_LATE_HOURS,
+  DEFAULT_CANCELLATION_LATE_REFUND_PERCENT,
   generateInvoiceNumberAsync,
   resolveServiceImageUrl,
   getEnv,
@@ -26,6 +30,7 @@ import {
   getDayKeyFromDateStr,
   START_HOURS,
 } from '../_lib/server.js';
+import type { CancellationRefundCalculation } from '../_lib/server.js';
 
 const ACCEPTED_PROPERTY_TYPES: readonly string[] = [
   ...BOOKING_PROPERTY_TYPES,
@@ -169,6 +174,10 @@ export async function handleBookings(
         'discount_biweekly',
         'discount_monthly',
         'max_bookings_per_slot',
+        'business_phone',
+        'min_booking_lead_hours',
+        'cancellation_late_hours',
+        'cancellation_late_refund_percent',
       ];
       const { data: settingsData, error: settingsError } = await admin
         .from('settings')
@@ -379,6 +388,20 @@ export async function handleBookings(
 
       if (isBookingStartTimePassed(date, timeSlot)) {
         return sendError(res, 'Cannot book a date and start time in the past.', 400);
+      }
+
+      // Enforce minimum booking lead time (e.g. 5 hours in advance)
+      const minLeadHoursRaw = Number(settingsMap['min_booking_lead_hours']);
+      const minLeadHours = Number.isFinite(minLeadHoursRaw) && minLeadHoursRaw >= 0 ? minLeadHoursRaw : DEFAULT_MIN_BOOKING_LEAD_HOURS;
+      const hoursUntilBooking = getHoursUntilBookingStart(date, timeSlot);
+      if (hoursUntilBooking !== null && hoursUntilBooking < minLeadHours) {
+        const phone = settingsMap['business_phone'] || '+44 7362 068202';
+        return sendError(
+          res,
+          `Online bookings must be placed at least ${minLeadHours} hours in advance. For emergency shifts within the next ${minLeadHours} hours, please call us directly on ${phone}.`,
+          400,
+          { emergencyPhone: phone, minLeadHours }
+        );
       }
 
       if (durationHours < MIN_DURATION_HOURS || durationHours > MAX_DURATION_HOURS) {
@@ -646,7 +669,7 @@ export async function handleBookings(
 
     const { data: booking, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, user_id, status, payment_status, date, time_slot')
+      .select('id, user_id, price, status, payment_status, refunded_amount, date, time_slot')
       .eq('id', bookingId)
       .single();
 
@@ -654,13 +677,6 @@ export async function handleBookings(
     if (booking.user_id !== user.id) return sendError(res, 'Unauthorized', 403);
     if (booking.status === 'cancelled') return sendError(res, 'Booking is already cancelled', 400);
     if (booking.status === 'completed') return sendError(res, 'Completed bookings cannot be cancelled', 400);
-    if (booking.payment_status === 'paid') {
-      return sendError(
-        res,
-        'Paid bookings cannot be cancelled directly. Please submit a refund request so our team can process your refund according to our cancellation policy.',
-        400
-      );
-    }
 
     if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
       await admin.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id).eq('user_id', user.id);
@@ -672,13 +688,63 @@ export async function handleBookings(
       );
     }
 
+    // Load admin-configured late cancellation settings
+    const { data: cancelSettings } = await admin
+      .from('settings')
+      .select('key, value')
+      .in('key', ['cancellation_late_hours', 'cancellation_late_refund_percent', 'business_phone']);
+    const cMap: Record<string, string> = {};
+    for (const row of cancelSettings || []) cMap[row.key] = row.value;
+
+    const lateHours = Number(cMap['cancellation_late_hours']) || DEFAULT_CANCELLATION_LATE_HOURS;
+    const lateRefundPct = Number(cMap['cancellation_late_refund_percent']) || DEFAULT_CANCELLATION_LATE_REFUND_PERCENT;
     const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
-    if (hoursUntil !== null && hoursUntil <= 3) {
-      return sendError(
-        res,
-        'Cancellations are not permitted within 3 hours of the scheduled start time. Please contact our support team.',
-        400
-      );
+
+    const isPaid = booking.payment_status === 'paid';
+    let refundCalculation: CancellationRefundCalculation | null = null;
+    let refundRequestId: string | null = null;
+
+    if (isPaid) {
+      const totalPrice = Number(booking.price);
+      const alreadyRefunded = Number(booking.refunded_amount || 0);
+      refundCalculation = calculateCancellationRefund({
+        bookingPrice: totalPrice,
+        alreadyRefunded,
+        hoursUntilStart: hoursUntil,
+        lateWindowHours: lateHours,
+        lateRefundPercent: lateRefundPct,
+      });
+
+      if (refundCalculation.eligibleAmount > 0) {
+        const reasonText = refundCalculation.isLate
+          ? `Customer cancellation within ${lateHours}h of start time (${refundCalculation.refundPercent}% refund policy applied: £${refundCalculation.eligibleAmount.toFixed(2)}; £${refundCalculation.feeAmount.toFixed(2)} late cancellation fee)`
+          : `Customer cancellation more than ${lateHours}h in advance (Full 100% refund policy applied: £${refundCalculation.eligibleAmount.toFixed(2)})`;
+
+        // Check if there's already a pending refund request
+        const { data: existingRef } = await admin
+          .from('refund_requests')
+          .select('id')
+          .eq('booking_id', bookingId)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (!existingRef) {
+          const { data: refReq } = await admin
+            .from('refund_requests')
+            .insert({
+              booking_id: bookingId,
+              user_id: user.id,
+              reason: reasonText,
+              refund_amount: refundCalculation.eligibleAmount,
+              source: 'user',
+              status: 'pending',
+            })
+            .select('id')
+            .maybeSingle();
+
+          if (refReq) refundRequestId = refReq.id;
+        }
+      }
     }
 
     const { error: updateErr } = await admin
@@ -688,7 +754,20 @@ export async function handleBookings(
       .eq('user_id', user.id);
 
     if (updateErr) return sendError(res, updateErr.message, 500);
-    return sendSuccess(res, { message: 'Booking cancelled successfully' });
+
+    const message = isPaid && refundCalculation
+      ? refundCalculation.isLate
+        ? `Booking cancelled. A ${refundCalculation.refundPercent}% refund (£${refundCalculation.eligibleAmount.toFixed(2)}) has been submitted for admin approval in accordance with our cancellation policy (${lateHours}h late notice). It will be refunded via Stripe upon approval.`
+        : `Booking cancelled. A full 100% refund (£${refundCalculation.eligibleAmount.toFixed(2)}) has been submitted for admin approval and will be refunded via Stripe.`
+      : 'Your unpaid booking has been cancelled immediately at no charge.';
+
+    return sendSuccess(res, {
+      message,
+      cancelled: true,
+      isPaid,
+      refundCalculation,
+      refundRequestId,
+    });
   }
 
   // ─── 3. /api/bookings/:id/checkout ─────────────────────────────────────────
@@ -864,6 +943,25 @@ export async function handleBookings(
         return sendError(res, 'Requested reschedule date/time cannot be in the past.', 400);
       }
 
+      // Check advance booking lead time for reschedule
+      const { data: leadSetting } = await admin
+        .from('settings')
+        .select('key, value')
+        .in('key', ['min_booking_lead_hours', 'business_phone']);
+      const leadMap: Record<string, string> = {};
+      for (const row of leadSetting || []) leadMap[row.key] = row.value;
+      const minLeadHours = Number(leadMap['min_booking_lead_hours']) || DEFAULT_MIN_BOOKING_LEAD_HOURS;
+      const hoursUntilReschedule = getHoursUntilBookingStart(requestedDate, cleanTime);
+      if (hoursUntilReschedule !== null && hoursUntilReschedule < minLeadHours) {
+        const phone = leadMap['business_phone'] || '+44 7362 068202';
+        return sendError(
+          res,
+          `Rescheduled shifts must be scheduled at least ${minLeadHours} hours in advance. For emergency assistance within ${minLeadHours} hours, please call us on ${phone}.`,
+          400,
+          { emergencyPhone: phone, minLeadHours }
+        );
+      }
+
       const { data: booking } = await supabase
         .from('bookings')
         .select('id, status')
@@ -887,6 +985,27 @@ export async function handleBookings(
       }
       if (dayConfig.slots && dayConfig.slots.length > 0 && !dayConfig.slots.includes(startPart)) {
         return sendError(res, `The ${startPart} time slot is not available on that day.`, 400);
+      }
+
+      // Check slot capacity on requested date & slot
+      const { data: maxSlotRow } = await admin
+        .from('settings')
+        .select('value')
+        .eq('key', 'max_bookings_per_slot')
+        .maybeSingle();
+      const maxPerSlotResched = Number(maxSlotRow?.value) > 0 ? Number(maxSlotRow?.value) : 10;
+      const { count: reschedSlotCount } = await admin
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('date', requestedDate)
+        .neq('status', 'cancelled')
+        .like('time_slot', `${startPart}%`);
+      if (typeof reschedSlotCount === 'number' && reschedSlotCount >= maxPerSlotResched) {
+        return sendError(
+          res,
+          `Sorry, the ${startPart} slot on ${requestedDate} is already fully booked. Please select another time or date.`,
+          409
+        );
       }
 
       // Prevent duplicate pending reschedule requests
@@ -1098,7 +1217,7 @@ export async function handleBookings(
 
     const { data: booking, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, user_id, price, status, payment_status, refunded_amount')
+      .select('id, user_id, price, status, payment_status, refunded_amount, date, time_slot')
       .eq('id', bookingId)
       .single();
 
@@ -1115,11 +1234,31 @@ export async function handleBookings(
       return sendError(res, 'This booking has already been fully refunded.', 400);
     }
 
-    const refundAmount = amount === undefined ? remainingBalance : Math.round(Number(amount) * 100) / 100;
-    if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > remainingBalance) {
+    const { data: cancelSettings } = await admin
+      .from('settings')
+      .select('key, value')
+      .in('key', ['cancellation_late_hours', 'cancellation_late_refund_percent']);
+    const cMap: Record<string, string> = {};
+    for (const row of cancelSettings || []) cMap[row.key] = row.value;
+
+    const lateHours = Number(cMap['cancellation_late_hours']) || DEFAULT_CANCELLATION_LATE_HOURS;
+    const lateRefundPct = Number(cMap['cancellation_late_refund_percent']) || DEFAULT_CANCELLATION_LATE_REFUND_PERCENT;
+    const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
+
+    const refundCalc = calculateCancellationRefund({
+      bookingPrice: totalPrice,
+      alreadyRefunded,
+      hoursUntilStart: hoursUntil,
+      lateWindowHours: lateHours,
+      lateRefundPercent: lateRefundPct,
+    });
+
+    const maxEligible = refundCalc.eligibleAmount > 0 ? refundCalc.eligibleAmount : remainingBalance;
+    const refundAmount = amount === undefined ? maxEligible : Math.min(Math.round(Number(amount) * 100) / 100, maxEligible);
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > maxEligible) {
       return sendError(
         res,
-        `Refund amount must be between £0.01 and £${remainingBalance.toFixed(2)}.`,
+        `Refund amount must be between £0.01 and £${maxEligible.toFixed(2)} (per cancellation policy: ${refundCalc.refundPercent}% eligible).`,
         400
       );
     }
@@ -1132,6 +1271,11 @@ export async function handleBookings(
       .maybeSingle();
     if (existingPending) {
       return sendError(res, 'A refund request is already pending for this booking.', 409);
+    }
+
+    // If upcoming, set status to cancelled
+    if (booking.status === 'upcoming') {
+      await admin.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id);
     }
 
     const { data, error } = await admin

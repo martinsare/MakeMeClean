@@ -47,7 +47,7 @@ You don't need to provide cleaning supplies—we bring our own eco-friendly prod
 
 ## Be Home (or Leave Access)
 
-Be available during your appointment, or arrange safe key access. This ensures smooth entry and means your cleaner can ask questions if needed.
+Be available at your property during your appointment (or have an adult representative present). This ensures safe entry, mutual peace of mind, and means your cleaner can ask questions if needed.
 
 Following these simple steps means your home gets the best possible clean in the shortest time. Your cleaner appreciates it, and you'll see better results.`,
   },

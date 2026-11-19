@@ -3,6 +3,10 @@ import { supabase } from "./supabase";
 export {
   calcTimeSlot,
   calculateBookingPrice,
+  calculateCancellationRefund,
+  DEFAULT_MIN_BOOKING_LEAD_HOURS,
+  DEFAULT_CANCELLATION_LATE_HOURS,
+  DEFAULT_CANCELLATION_LATE_REFUND_PERCENT,
   START_HOURS,
   BOOKING_DAYS,
   DEFAULT_WEEKLY_AVAILABILITY,
@@ -13,6 +17,7 @@ export type {
   BookingDayKey,
   DayAvailabilityConfig,
   WeeklyAvailabilitySchedule,
+  CancellationRefundCalculation,
 } from "../../shared/booking";
 
 export interface DbService {

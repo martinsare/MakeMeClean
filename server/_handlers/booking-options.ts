@@ -2,6 +2,7 @@ import {
   VercelRequest,
   VercelResponse,
   getServerSupabase,
+  getAdminSupabase,
   sendSuccess,
   sendError,
   resolveServiceImageUrl,
@@ -63,6 +64,25 @@ export async function handleBookingOptions(req: VercelRequest, res: VercelRespon
       ? citiesRes.data.map((c) => c.name)
       : defaultCities;
 
+    const slotCounts: Record<string, number> = {};
+    const dateParam = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const admin = getAdminSupabase();
+      const { data: bData } = await admin
+        .from('bookings')
+        .select('time_slot')
+        .eq('date', dateParam)
+        .neq('status', 'cancelled');
+      if (bData) {
+        for (const row of bData) {
+          const start = (row.time_slot || '').slice(0, 5);
+          if (start) {
+            slotCounts[start] = (slotCounts[start] || 0) + 1;
+          }
+        }
+      }
+    }
+
     return sendSuccess(res, {
       services,
       cities,
@@ -72,6 +92,7 @@ export async function handleBookingOptions(req: VercelRequest, res: VercelRespon
       minDurationHours: MIN_DURATION_HOURS,
       maxDurationHours: MAX_DURATION_HOURS,
       durationStepHours: DURATION_STEP_HOURS,
+      slotCounts,
     });
   } catch (err: any) {
     return sendError(res, err?.message || 'Failed to fetch booking options', 500);

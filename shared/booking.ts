@@ -152,10 +152,9 @@ export const BOOKING_PROPERTY_TYPES = [
 ] as const;
 
 export const ACCESS_METHODS = [
-  { id: "home", label: "I\'ll be at home", desc: "You or someone will let the cleaner in" },
-  { id: "key_safe", label: "Key safe / Lockbox", desc: "Access code left in instructions" },
-  { id: "concierge", label: "Concierge / Front desk", desc: "Keys with building reception" },
-  { id: "hidden_key", label: "Hidden key", desc: "Key left in a designated secure spot" },
+  { id: "home", label: "I'll be at home", desc: "You will be present on site to grant access and remain during clean" },
+  { id: "representative", label: "Representative on site", desc: "An adult family member, flatmate, or agent will be present" },
+  { id: "concierge", label: "Concierge / On-site staff", desc: "Building front desk or on-site concierge will admit cleaner and monitor premises" },
 ] as const;
 
 export const CLEANING_SUPPLIES_OPTIONS = [
@@ -607,3 +606,59 @@ export function isBookingEndTimePassed(dateStr: string, timeSlot?: string | null
   const dayDiffMinutes = Math.round((targetDayUtc - nowDayUtc) / 60000);
   return dayDiffMinutes + endMinutes <= ukNow.totalMinutes;
 }
+
+export const DEFAULT_MIN_BOOKING_LEAD_HOURS = 5;
+export const DEFAULT_CANCELLATION_LATE_HOURS = 3;
+export const DEFAULT_CANCELLATION_LATE_REFUND_PERCENT = 75;
+
+export interface CancellationRefundCalculation {
+  eligibleAmount: number;
+  refundPercent: number;
+  feeAmount: number;
+  feePercent: number;
+  isLate: boolean;
+  hoursUntilStart: number | null;
+}
+
+/**
+ * Authoritative cancellation refund calculation.
+ * If cancelled within lateWindowHours (default 3h), refundPercent (default 75%) is returned.
+ * If cancelled earlier than lateWindowHours, 100% full refund is returned.
+ */
+export function calculateCancellationRefund(params: {
+  bookingPrice: number;
+  alreadyRefunded?: number;
+  hoursUntilStart: number | null;
+  lateWindowHours?: number;
+  lateRefundPercent?: number;
+}): CancellationRefundCalculation {
+  const price = Number.isFinite(params.bookingPrice) && params.bookingPrice > 0 ? params.bookingPrice : 0;
+  const alreadyRefunded = Number.isFinite(params.alreadyRefunded) && (params.alreadyRefunded ?? 0) > 0 ? (params.alreadyRefunded ?? 0) : 0;
+  const remainingBalance = Math.round(Math.max(0, price - alreadyRefunded) * 100) / 100;
+
+  const lateHours = Number.isFinite(params.lateWindowHours) && (params.lateWindowHours ?? 0) >= 0
+    ? (params.lateWindowHours ?? DEFAULT_CANCELLATION_LATE_HOURS)
+    : DEFAULT_CANCELLATION_LATE_HOURS;
+
+  const latePct = Number.isFinite(params.lateRefundPercent) && (params.lateRefundPercent ?? 0) >= 0 && (params.lateRefundPercent ?? 0) <= 100
+    ? (params.lateRefundPercent ?? DEFAULT_CANCELLATION_LATE_REFUND_PERCENT)
+    : DEFAULT_CANCELLATION_LATE_REFUND_PERCENT;
+
+  const hours = params.hoursUntilStart;
+  const isLate = hours !== null && hours <= lateHours;
+  const refundPercent = isLate ? latePct : 100;
+  const feePercent = 100 - refundPercent;
+
+  const eligibleAmount = Math.round(remainingBalance * (refundPercent / 100) * 100) / 100;
+  const feeAmount = Math.round((remainingBalance - eligibleAmount) * 100) / 100;
+
+  return {
+    eligibleAmount,
+    refundPercent,
+    feeAmount,
+    feePercent,
+    isLate,
+    hoursUntilStart: hours,
+  };
+}
+

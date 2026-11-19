@@ -37,13 +37,18 @@ import {
   UtensilsCrossed,
   Droplets,
   Sparkles,
+  PhoneCall,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useSettings } from "@/hooks/useSettings";
 import { supabase } from "@/lib/supabase";
 import {
   START_HOURS,
   calcTimeSlot,
   calculateBookingPrice,
+  DEFAULT_MIN_BOOKING_LEAD_HOURS,
   walesCities,
   fetchActiveCities,
   Service,
@@ -53,6 +58,7 @@ import {
   parseWeeklyAvailability,
   getDayKeyFromDateStr,
 } from "@/lib/services";
+import { getHoursUntilBookingStart } from "@/lib/constants";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   ACCESS_METHODS,
@@ -296,6 +302,7 @@ function formatDuration(hours: number) {
 
 export default function BookingPage() {
   const { user, loading } = useAuth();
+  const settings = useSettings();
   const [, setLocation] = useLocation();
   const params = useParams<{ serviceId?: string }>();
   const { services } = useServices();
@@ -352,6 +359,7 @@ export default function BookingPage() {
   const [accessMethod, setAccessMethod] = useState(
     () => savedDraft?.accessMethod ?? "home"
   );
+  const [bookedSlotCounts, setBookedSlotCounts] = useState<Record<string, number>>({});
   const [suppliesOption, setSuppliesOption] = useState(
     () => savedDraft?.suppliesOption ?? "cleaner"
   );
@@ -729,23 +737,21 @@ export default function BookingPage() {
       });
   }, [user]);
 
+  const minLeadHours = Number(settings.min_booking_lead_hours) || DEFAULT_MIN_BOOKING_LEAD_HOURS;
+
   const minDate = new Date();
   // Format local date string (YYYY-MM-DD) avoiding UTC offset skew
   const localTodayStr = `${minDate.getFullYear()}-${String(
     minDate.getMonth() + 1
   ).padStart(2, "0")}-${String(minDate.getDate()).padStart(2, "0")}`;
 
-  // Calculate if there are still slots left today across the 24/7 schedule
-  const currentHour = minDate.getHours();
-  const currentMinute = minDate.getMinutes();
+  // Calculate if there are still slots left today that meet the minimum lead time (e.g. 5 hours)
   const remainingTodaySlots = START_HOURS.filter((h) => {
-    const [hHour, hMin] = h.split(":").map(Number);
-    return (
-      hHour > currentHour || (hHour === currentHour && hMin > currentMinute)
-    );
+    const hours = getHoursUntilBookingStart(localTodayStr, h);
+    return hours !== null && hours >= minLeadHours;
   });
 
-  // If today has already passed all available slots, min selectable date moves to tomorrow
+  // If today has no slots meeting the lead time, min selectable date moves to tomorrow
   const minSelectableDate = new Date();
   if (remainingTodaySlots.length === 0) {
     minSelectableDate.setDate(minSelectableDate.getDate() + 1);
@@ -776,15 +782,68 @@ export default function BookingPage() {
   const selectedDayKey = getDayKeyFromDateStr(date || minDateStr);
   const selectedDayConfig = weeklySchedule[selectedDayKey] || { enabled: true, slots: [...START_HOURS] };
   const isSelectedDayEnabled = selectedDayConfig.enabled;
-  const configuredDaySlots = selectedDayConfig.slots && selectedDayConfig.slots.length > 0
+  const maxPerSlotRaw = Number(settings.max_bookings_per_slot);
+  const maxPerSlot = Number.isFinite(maxPerSlotRaw) && maxPerSlotRaw > 0 ? maxPerSlotRaw : 10;
+
+  // Query booked slot occupancy for the selected date (secure RPC with API fallback)
+  useEffect(() => {
+    const targetDate = date || minDateStr;
+    if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return;
+
+    let active = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc("get_booked_slot_counts", {
+          p_date: targetDate,
+        });
+        if (!active) return;
+        if (!error && Array.isArray(data)) {
+          const map: Record<string, number> = {};
+          for (const row of data) {
+            if (row.start_hour) map[row.start_hour] = Number(row.booking_count) || 0;
+          }
+          setBookedSlotCounts(map);
+          return;
+        }
+      } catch {
+        // Fallback to API if RPC is unavailable
+      }
+
+      try {
+        const res = await fetch(`/api/booking-options?date=${encodeURIComponent(targetDate)}`);
+        const json = await res.json();
+        if (active && json?.data?.slotCounts) {
+          setBookedSlotCounts(json.data.slotCounts);
+        }
+      } catch {
+        // Ignore fallback errors
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [date, minDateStr]);
+
+  const configuredDaySlots = Array.isArray(selectedDayConfig.slots)
     ? selectedDayConfig.slots
     : [...START_HOURS];
 
-  // Filter slots for today if today is selected
+  // Only show start hours that are:
+  // 1. On an enabled day of the week
+  // 2. Active in that day's schedule
+  // 3. Meet the minimum advance lead time (e.g. 5 hours)
+  // 4. Have not exhausted maximum bookings per slot
   const availableStartHours = isSelectedDayEnabled
-    ? (date === localTodayStr
-        ? configuredDaySlots.filter((h) => remainingTodaySlots.includes(h))
-        : configuredDaySlots)
+    ? configuredDaySlots.filter((h) => {
+        const hours = getHoursUntilBookingStart(date || minDateStr, h);
+        if (hours === null || hours < minLeadHours) return false;
+
+        const bookedCount = bookedSlotCounts[h] || 0;
+        if (bookedCount >= maxPerSlot) return false;
+
+        return true;
+      })
     : [];
 
   // Initialize date to min selectable date if blank or before min date
@@ -845,7 +904,11 @@ export default function BookingPage() {
         return false;
       }
       if (availableStartHours.length === 0) {
-        setError(date === localTodayStr ? "No future slots left today. Please select another date." : "No available time slots on this day. Please select another date.");
+        setError(
+          date === localTodayStr
+            ? `No online slots left today that meet our ${minLeadHours}-hour advance notice policy. For emergency cleans, please call ${settings.business_phone || "+44 7362 068202"}.`
+            : `No available slots on this date satisfying our ${minLeadHours}-hour notice policy. Please select another date or call ${settings.business_phone || "+44 7362 068202"}.`
+        );
         return false;
       }
     } else if (targetStep === 5) {
@@ -1720,8 +1783,10 @@ export default function BookingPage() {
                     ))}
                   </select>
                 ) : (
-                  <div className="px-3.5 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-xs text-gray-500 font-medium">
-                    {isSelectedDayEnabled ? "No slots available today" : "Closed on this day"}
+                  <div className="px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium">
+                    {!isSelectedDayEnabled
+                      ? "Closed on this day"
+                      : "No slots available on this date (all slots fully booked or within 5h notice)"}
                   </div>
                 )}
               </div>
@@ -1736,6 +1801,25 @@ export default function BookingPage() {
                 </span>
               </div>
             )}
+
+            {/* Emergency Shift & Short-Notice Notice */}
+            <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-4 text-xs text-amber-950 flex items-start gap-3">
+              <PhoneCall className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-amber-950">
+                  Need an emergency or short-notice clean within the next {minLeadHours} hours?
+                </p>
+                <p className="text-amber-800 leading-relaxed">
+                  Online bookings require at least {minLeadHours} hours advance notice. If you require immediate emergency cleaning or same-day dispatch sooner than {minLeadHours} hours, please call our team directly on{" "}
+                  <a
+                    href={`tel:${(settings.business_phone || "+44 7362 068202").replace(/\s/g, "")}`}
+                    className="font-bold text-amber-950 underline hover:text-black"
+                  >
+                    {settings.business_phone || "+44 7362 068202"}
+                  </a>.
+                </p>
+              </div>
+            </div>
 
             <div className="flex justify-between items-center pt-4 border-t border-gray-100">
               <button
@@ -1832,11 +1916,22 @@ export default function BookingPage() {
 
             {/* Access method */}
             <div>
-              <label className="text-xs font-bold text-gray-700 block mb-2">
-                <Key className="w-3.5 h-3.5 inline mr-1 text-green-600" /> Key &
-                Access Arrangements
+              <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                <Key className="w-3.5 h-3.5 inline mr-1 text-green-600" /> Access & Arrival Arrangements
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+
+              {/* Strict safety requirement notice */}
+              <div className="mb-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-amber-950">Safety & Security Notice — Someone Must Be Present:</p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    For your property's safety and our staff's peace of mind, an adult client or authorised representative must be present on site to grant access and remain during the clean. We strictly do not enter unattended properties without someone present.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {ACCESS_METHODS.map((method) => (
                   <button
                     type="button"
@@ -2005,7 +2100,7 @@ export default function BookingPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="E.g. key in lockbox code 1234, friendly dog in utility room, focus on kitchen tiles..."
+                placeholder="E.g. Flat buzzer number, parking instructions, priority cleaning areas..."
                 className="input-field resize-none text-xs"
               />
             </div>

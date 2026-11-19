@@ -64,9 +64,10 @@ const STATUS_PILL = BOOKING_STATUS_STYLES;
 // Human-friendly lookup maps
 const ACCESS_METHOD_LABELS: Record<string, string> = {
   home: "Customer will be at home",
-  key_safe: "Key safe / Lockbox",
-  concierge: "Concierge / Front desk",
-  hidden_key: "Hidden key on property",
+  representative: "Representative on site",
+  concierge: "Concierge / On-site staff",
+  key_safe: "Key safe / Lockbox (Legacy)",
+  hidden_key: "Hidden key on property (Legacy)",
 };
 
 const SUPPLIES_OPTION_LABELS: Record<string, string> = {

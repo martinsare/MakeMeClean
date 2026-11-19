@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: "Do I need to be home during the clean?",
-    a: "Not necessarily. Many customers leave a key or set up safe-entry. Just add your instructions in the Special Instructions field when booking.",
+    a: "Yes. For security and clear mutual protection, an adult representative (client, family member, or designated occupant) must be present on site to grant entry and remain during the clean. We do not perform unattended or lone entry.",
   },
   {
     q: "What if I'm not happy with the clean?",

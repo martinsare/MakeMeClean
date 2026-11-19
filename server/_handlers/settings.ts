@@ -30,6 +30,10 @@ const PUBLIC_SETTING_KEYS = new Set([
   'social_instagram',
   'social_twitter',
   'social_linkedin',
+  'max_bookings_per_slot',
+  'min_booking_lead_hours',
+  'cancellation_late_hours',
+  'cancellation_late_refund_percent',
 ]);
 
 export async function handleSettings(req: VercelRequest, res: VercelResponse) {
@@ -57,6 +61,10 @@ export async function handleSettings(req: VercelRequest, res: VercelResponse) {
       company_legal_name: 'MakeMeClean Ltd',
       company_reg_number: '',
       company_registered_address: 'Wales, United Kingdom',
+      max_bookings_per_slot: '10',
+      min_booking_lead_hours: '5',
+      cancellation_late_hours: '3',
+      cancellation_late_refund_percent: '75',
     };
 
     const supabase = getServerSupabase();

@@ -33,32 +33,37 @@ import {
   getHoursUntilBookingStart,
   isBookingStartTimePassed,
 } from "@/lib/constants";
+import { useSettings } from "@/hooks/useSettings";
 import { api } from "@/lib/apiClient";
 import { getServiceBookingConfig } from "@/lib/serviceBookingConfigs";
 
 const STATUS_STYLES = BOOKING_STATUS_STYLES;
 
-function canCancelBooking(booking: Booking): {
+function canCancelBooking(
+  booking: Booking,
+  lateHours: number = 3,
+  lateRefundPercent: number = 75
+): {
   allowed: boolean;
   reason?: string;
+  isLate?: boolean;
+  refundPercent?: number;
 } {
   if (booking.status !== "upcoming")
     return { allowed: false, reason: "Booking is not upcoming." };
-  if (booking.payment_status === "paid")
+
+  if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
     return {
       allowed: false,
-      reason:
-        "Paid bookings cannot be cancelled directly — please use the Request Refund button above so our team can process your refund.",
-    };
-  const startHour = booking.time_slot.split(/[-–]/)[0]?.trim() || "09:00";
-  const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
-  if (hoursUntil !== null && hoursUntil <= 3) {
-    return {
-      allowed: false,
-      reason: `Cancellations must be made at least 3 hours before the booking. Yours starts at ${startHour} on ${booking.date}.`,
+      reason: "Appointment scheduled start time has already passed.",
     };
   }
-  return { allowed: true };
+
+  const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
+  const isLate = hoursUntil !== null && hoursUntil <= lateHours;
+  const refundPercent = isLate ? lateRefundPercent : 100;
+
+  return { allowed: true, isLate, refundPercent };
 }
 
 function InfoRow({
@@ -93,6 +98,7 @@ const minDateStr = minDate.toISOString().split("T")[0];
 
 export default function BookingDetail() {
   const { user, loading } = useAuth();
+  const settings = useSettings();
   const [, setLocation] = useLocation();
   const params = useParams<{ id: string }>();
 
@@ -112,6 +118,14 @@ export default function BookingDetail() {
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [cancelSuccessMsg, setCancelSuccessMsg] = useState("");
+  const [refundRequest, setRefundRequest] = useState<{
+    id: string;
+    status: "pending" | "approved" | "rejected";
+    refund_amount: number | null;
+    admin_notes: string | null;
+    stripe_refund_id: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) setLocation("/login");
@@ -126,10 +140,18 @@ export default function BookingDetail() {
         .select("id")
         .eq("booking_id", params.id)
         .maybeSingle(),
+      supabase
+        .from("refund_requests")
+        .select("id, status, refund_amount, admin_notes, stripe_refund_id")
+        .eq("booking_id", params.id)
+        .order("requested_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
-      .then(([bk, { data: r }]) => {
+      .then(([bk, { data: r }, { data: refReq }]) => {
         setBooking(bk as Booking | null);
         setHasReview(!!r);
+        if (refReq) setRefundRequest(refReq as any);
         const rescheduleData = bk?.rescheduleRequest || bk?.active_reschedule;
         if (rescheduleData) {
           setExistingRequest({
@@ -163,10 +185,22 @@ export default function BookingDetail() {
     if (!booking) return;
     setCancelling(true);
     setActionError("");
+    setCancelSuccessMsg("");
     try {
-      await api.cancelBooking(booking.id);
+      const res = await api.cancelBooking(booking.id);
       setBooking({ ...booking, status: "cancelled" });
       setShowConfirm(false);
+      if (res?.message) {
+        setCancelSuccessMsg(res.message);
+      }
+      const { data: latestRefReq } = await supabase
+        .from("refund_requests")
+        .select("id, status, refund_amount, admin_notes, stripe_refund_id")
+        .eq("booking_id", booking.id)
+        .order("requested_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestRefReq) setRefundRequest(latestRefReq as any);
     } catch (err: any) {
       setActionError(err?.message || "Failed to cancel booking. Please try again.");
       setShowConfirm(false);
@@ -249,7 +283,13 @@ export default function BookingDetail() {
       : booking.payment_status === "disputed"
       ? "bg-red-100 text-red-700"
       : "bg-amber-100 text-amber-700";
-  const cancelCheck = canCancelBooking({ ...booking, status: effectiveStatus });
+  const lateHours = Number(settings.cancellation_late_hours) || 3;
+  const lateRefundPercent = Number(settings.cancellation_late_refund_percent) || 75;
+  const cancelCheck = canCancelBooking(
+    { ...booking, status: effectiveStatus },
+    lateHours,
+    lateRefundPercent
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -266,6 +306,73 @@ export default function BookingDetail() {
           <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{actionError}</span>
+          </div>
+        )}
+
+        {cancelSuccessMsg && (
+          <div className="mb-5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{cancelSuccessMsg}</span>
+          </div>
+        )}
+
+        {/* Refund Status Card (Paid cancellations) */}
+        {refundRequest && (
+          <div
+            className={cn(
+              "mb-5 rounded-2xl border p-4 text-sm flex items-start gap-3",
+              refundRequest.status === "pending"
+                ? "bg-amber-50 border-amber-200 text-amber-900"
+                : refundRequest.status === "approved"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                : "bg-red-50 border-red-200 text-red-900"
+            )}
+          >
+            {refundRequest.status === "pending" ? (
+              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            ) : refundRequest.status === "approved" ? (
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-1">
+              <p className="font-bold text-xs uppercase tracking-wide">
+                {refundRequest.status === "pending"
+                  ? "Refund Request Awaiting Admin Approval"
+                  : refundRequest.status === "approved"
+                  ? "Refund Approved & Issued via Stripe"
+                  : "Refund Request Rejected"}
+              </p>
+              <p className="text-xs leading-relaxed">
+                {refundRequest.status === "pending" ? (
+                  <>
+                    A refund of{" "}
+                    <strong>
+                      {formatCurrency(refundRequest.refund_amount ?? booking.price)}
+                    </strong>{" "}
+                    has been submitted for administrative review according to our cancellation policy. Once approved, the funds will be automatically credited to your payment card via Stripe.
+                  </>
+                ) : refundRequest.status === "approved" ? (
+                  <>
+                    A refund of{" "}
+                    <strong>
+                      {formatCurrency(refundRequest.refund_amount ?? booking.price)}
+                    </strong>{" "}
+                    has been approved and processed back to your original payment card via Stripe.
+                    {refundRequest.stripe_refund_id && (
+                      <span className="block text-[11px] text-gray-500 mt-0.5">
+                        Stripe Refund Reference: {refundRequest.stripe_refund_id}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Your refund request was reviewed. Reason / Note:{" "}
+                    {refundRequest.admin_notes || "Please contact customer support for further assistance."}
+                  </>
+                )}
+              </p>
+            </div>
           </div>
         )}
 
@@ -652,8 +759,20 @@ export default function BookingDetail() {
                   <p className="font-bold text-red-800 text-sm">
                     Cancel this booking?
                   </p>
-                  <p className="text-xs text-red-600 mt-0.5">
-                    This action cannot be undone.
+                  <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                    {booking.payment_status === "paid" ? (
+                      cancelCheck.isLate ? (
+                        <>
+                          This cancellation is within <strong>{lateHours} hours</strong> of start time. Per our cancellation policy, a <strong>{cancelCheck.refundPercent}% refund ({formatCurrency(Number(booking.price) * ((cancelCheck.refundPercent ?? 75) / 100))})</strong> will be submitted for admin approval and issued to your payment card via Stripe (a {100 - (cancelCheck.refundPercent ?? 75)}% late fee applies).
+                        </>
+                      ) : (
+                        <>
+                          This booking is more than {lateHours} hours in advance. A <strong>100% full refund ({formatCurrency(booking.price)})</strong> will be submitted for admin approval and issued directly to your card via Stripe.
+                        </>
+                      )
+                    ) : (
+                      "This action cannot be undone. Your unpaid booking will be cancelled immediately at no charge."
+                    )}
                   </p>
                 </div>
               </div>

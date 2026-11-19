@@ -19,6 +19,10 @@ export const SETTING_DEFAULTS: Record<string, string> = {
   company_registered_address: "Wales, United Kingdom",
   vat_registered: "false",
   vat_number: "",
+  max_bookings_per_slot: "10",
+  min_booking_lead_hours: "5",
+  cancellation_late_hours: "3",
+  cancellation_late_refund_percent: "75",
 };
 
 // Module-level cache so every component shares one fetch per session

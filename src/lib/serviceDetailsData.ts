@@ -55,7 +55,7 @@ export const defaultServiceDetail: ServiceDetailConfig = {
   faqs: [
     {
       q: "Do I have to be at home during the cleaning?",
-      a: "No! Many of our clients leave a key in a key safe, with a neighbour, or let the cleaner in before heading to work. All staff are DBS-vetted and fully insured.",
+      a: "Yes. For security and to protect both your belongings and our cleaners from liability, someone (the client or a designated adult representative) must always be present on site to provide access and remain during the clean.",
     },
     {
       q: "Can I book a regular clean with the same cleaner each time?",

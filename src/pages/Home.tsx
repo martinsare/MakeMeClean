@@ -239,7 +239,7 @@ const defaultCoverageTowns: ServiceCityLocation[] = [
 const faqs = [
   {
     q: "Do I need to be at home while the cleaner is working?",
-    a: "No, you don't have to be home! Many of our clients leave a key in a key safe, with a neighbour, or let the cleaner in before heading to work. All our cleaners are fully DBS-checked, vetted, and covered by public liability insurance.",
+    a: "Yes. For your property's safety and our staff's peace of mind, an adult (client or designated representative) must always be present to provide access and remain on site. We do not perform lone or unattended entry to prevent liability issues or misplaced item claims.",
   },
   {
     q: "Do the cleaners bring their own cleaning products and equipment?",

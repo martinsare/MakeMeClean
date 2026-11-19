@@ -10,6 +10,10 @@ export {
   calculateRecommendedHoursForService,
   calculateDurationHours,
   calculateBookingPrice,
+  calculateCancellationRefund,
+  DEFAULT_MIN_BOOKING_LEAD_HOURS,
+  DEFAULT_CANCELLATION_LATE_HOURS,
+  DEFAULT_CANCELLATION_LATE_REFUND_PERCENT,
   calcTimeSlot,
   DEFAULT_BOOKING_EXTRAS,
   DEFAULT_DURATION_MULTIPLIERS,
@@ -39,6 +43,7 @@ export type {
   DayAvailabilityConfig,
   WeeklyAvailabilitySchedule,
   ServiceCategory,
+  CancellationRefundCalculation,
 } from '../../shared/booking.js';
 
 export interface AuthenticatedUser {
