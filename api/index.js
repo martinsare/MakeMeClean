@@ -22091,6 +22091,13 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 
 // shared/booking.ts
 var START_HOURS = [
+  "00:00",
+  "01:00",
+  "02:00",
+  "03:00",
+  "04:00",
+  "05:00",
+  "06:00",
   "07:00",
   "08:00",
   "09:00",
@@ -22101,7 +22108,13 @@ var START_HOURS = [
   "14:00",
   "15:00",
   "16:00",
-  "17:00"
+  "17:00",
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+  "22:00",
+  "23:00"
 ];
 var BOOKING_DAYS = [
   { key: "mon", label: "Monday", short: "Mon" },
@@ -22379,9 +22392,9 @@ function calculateRecommendedHours(beds, baths, livingAreas, selectedExtraIds, m
 }
 function calcTimeSlot(startHour, durationHours) {
   const [hour, minute] = startHour.split(":").map(Number);
-  const startMinutes = hour * 60 + minute;
+  const startMinutes = (Number.isFinite(hour) ? hour : 9) * 60 + (Number.isFinite(minute) ? minute : 0);
   const endMinutes = startMinutes + Math.round(durationHours * 60);
-  const endHour = Math.floor(endMinutes / 60);
+  const endHour = Math.floor(endMinutes / 60) % 24;
   const endMinute = endMinutes % 60;
   const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`;
   return `${startHour} \u2013 ${endTime}`;
@@ -22392,9 +22405,13 @@ function calculateDurationHours(timeSlot) {
   if (parts.length < 2) return 2;
   const [startHour, startMinute] = (parts[0] || "09:00").split(":").map(Number);
   const [endHour, endMinute] = (parts[1] || "11:00").split(":").map(Number);
-  const startMinutes = startHour * 60 + startMinute;
-  const endMinutes = endHour * 60 + endMinute;
-  const duration = (endMinutes - startMinutes) / 60;
+  const startMinutes = (Number.isFinite(startHour) ? startHour : 9) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+  const endMinutes = (Number.isFinite(endHour) ? endHour : 11) * 60 + (Number.isFinite(endMinute) ? endMinute : 0);
+  let diffMinutes = endMinutes - startMinutes;
+  if (diffMinutes <= 0) {
+    diffMinutes += 24 * 60;
+  }
+  const duration = diffMinutes / 60;
   return duration > 0 ? duration : 2;
 }
 function getUkNowParts(now = /* @__PURE__ */ new Date()) {
@@ -22802,7 +22819,7 @@ async function handleSettings(req, res) {
       discount_monthly: "5",
       business_phone: "+44 7362 068202",
       contact_email: "contact@makemeclean.co.uk",
-      business_hours: "7 days a week, 8am\u20138pm",
+      business_hours: "24/7",
       email_info: "info@makemeclean.co.uk",
       email_recruitment: "recruitment@makemeclean.co.uk",
       email_payment: "payment@makemeclean.co.uk",
@@ -23403,13 +23420,13 @@ async function handleBookings(req, res, subPath, params = {}) {
           400
         );
       }
-      if (startHour != null && (typeof startHour !== "string" || !/^(0[7-9]|1[0-7]):(00|30)$/.test(startHour))) {
+      if (startHour != null && (typeof startHour !== "string" || !/^(0\d|1\d|2[0-3]):(00|30)$/.test(startHour))) {
         return sendError(res, "Booking start time is invalid.", 400);
       }
       if (!timeSlot && startHour) {
         timeSlot = calcTimeSlot(startHour, durationHours);
       } else if (timeSlot) {
-        if (typeof timeSlot !== "string" || !/^(0[7-9]|1[0-7]):(00|30)\s*[-–]\s*(0\d|1\d|2[0-9]):(00|30)$/.test(timeSlot)) {
+        if (typeof timeSlot !== "string" || !/^(0\d|1\d|2[0-3]):(00|30)\s*[-–]\s*(0\d|1\d|2[0-3]):(00|30)$/.test(timeSlot)) {
           return sendError(res, "Booking time slot is invalid.", 400);
         }
         durationHours = calculateDurationHours(timeSlot);

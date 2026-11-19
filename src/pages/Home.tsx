@@ -850,7 +850,7 @@ export default function Home() {
               {
                 step: "02",
                 title: "Select Date & Time Slot",
-                desc: "Pick any day that suits you, 7 days a week from 8am to 8pm. Same-day appointments available for urgent cleans.",
+                desc: "Pick any day that suits you, 24/7 round the clock. Same-day appointments available for urgent cleans.",
               },
               {
                 step: "03",

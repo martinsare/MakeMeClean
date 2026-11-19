@@ -1,4 +1,11 @@
 export const START_HOURS = [
+  "00:00",
+  "01:00",
+  "02:00",
+  "03:00",
+  "04:00",
+  "05:00",
+  "06:00",
   "07:00",
   "08:00",
   "09:00",
@@ -10,6 +17,12 @@ export const START_HOURS = [
   "15:00",
   "16:00",
   "17:00",
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+  "22:00",
+  "23:00",
 ] as string[];
 
 export const BOOKING_DAYS = [
@@ -422,9 +435,9 @@ export function calculateRecommendedHours(
 
 export function calcTimeSlot(startHour: string, durationHours: number): string {
   const [hour, minute] = startHour.split(":").map(Number);
-  const startMinutes = hour * 60 + minute;
+  const startMinutes = (Number.isFinite(hour) ? hour : 9) * 60 + (Number.isFinite(minute) ? minute : 0);
   const endMinutes = startMinutes + Math.round(durationHours * 60);
-  const endHour = Math.floor(endMinutes / 60);
+  const endHour = Math.floor(endMinutes / 60) % 24;
   const endMinute = endMinutes % 60;
   const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`;
 
@@ -439,9 +452,13 @@ export function calculateDurationHours(timeSlot: string): number {
 
   const [startHour, startMinute] = (parts[0] || "09:00").split(":").map(Number);
   const [endHour, endMinute] = (parts[1] || "11:00").split(":").map(Number);
-  const startMinutes = startHour * 60 + startMinute;
-  const endMinutes = endHour * 60 + endMinute;
-  const duration = (endMinutes - startMinutes) / 60;
+  const startMinutes = (Number.isFinite(startHour) ? startHour : 9) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+  const endMinutes = (Number.isFinite(endHour) ? endHour : 11) * 60 + (Number.isFinite(endMinute) ? endMinute : 0);
+  let diffMinutes = endMinutes - startMinutes;
+  if (diffMinutes <= 0) {
+    diffMinutes += 24 * 60;
+  }
+  const duration = diffMinutes / 60;
 
   return duration > 0 ? duration : 2;
 }
@@ -553,24 +570,34 @@ export function isBookingEndTimePassed(dateStr: string, timeSlot?: string | null
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
   const parts = (timeSlot || "").split(/[-–]/).map((p) => p.trim());
   let endMinutes = 11 * 60;
+  let crossedMidnight = false;
+
+  const startStr = parts[0] || "09:00";
+  const [startH, startM] = startStr.split(":").map(Number);
+  const startMinutes = (Number.isFinite(startH) ? startH : 9) * 60 + (Number.isFinite(startM) ? startM : 0);
 
   if (parts.length >= 2 && parts[1]) {
     const [h, m] = parts[1].split(":").map(Number);
     if (Number.isFinite(h)) {
       endMinutes = h * 60 + (Number.isFinite(m) ? m : 0);
+      if (endMinutes <= startMinutes) {
+        crossedMidnight = true;
+      }
     }
   } else {
-    const startStr = parts[0] || "09:00";
-    const [startH, startM] = startStr.split(":").map(Number);
     const duration = durationHours || 2;
-    endMinutes = (Number.isFinite(startH) ? startH : 9) * 60 + (Number.isFinite(startM) ? startM : 0) + Math.round(duration * 60);
+    const totalEnd = startMinutes + Math.round(duration * 60);
+    if (totalEnd >= 24 * 60) {
+      crossedMidnight = true;
+    }
+    endMinutes = totalEnd % (24 * 60);
   }
 
   const ukNow = getUkNowParts();
   const targetDayUtc = Date.UTC(
     Number(dateStr.slice(0, 4)),
     Number(dateStr.slice(5, 7)) - 1,
-    Number(dateStr.slice(8, 10)),
+    Number(dateStr.slice(8, 10)) + (crossedMidnight ? 1 : 0),
   );
   const nowDayUtc = Date.UTC(
     Number(ukNow.dateStr.slice(0, 4)),

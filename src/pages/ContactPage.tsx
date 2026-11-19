@@ -145,7 +145,7 @@ export default function ContactPage() {
                 icon: Phone,
                 label: "Phone",
                 value: settings.business_phone,
-                sub: settings.business_hours || "7 days a week, 8am–8pm",
+                sub: settings.business_hours || "24/7 round-the-clock service",
               },
               {
                 icon: Mail,
@@ -162,8 +162,8 @@ export default function ContactPage() {
               {
                 icon: Clock,
                 label: "Working hours",
-                value: settings.business_hours,
-                sub: "Standard booking start slots 7am–5pm",
+                value: settings.business_hours || "24/7",
+                sub: "Full round-the-clock booking availability",
               },
             ].map(({ icon: Icon, label, value, sub }) => (
               <div

@@ -66,7 +66,7 @@ export default function StaffAvailability() {
     const slots = getWeek(ws);
     const next: WeekSlots = {
       ...slots,
-      [day]: slots[day] ? null : { from: "08:00", to: "18:00" },
+      [day]: slots[day] ? null : { from: "00:00", to: "23:59" },
     };
     setAvail((p) => ({ ...p, [ws]: next }));
     setSaved((p) => ({ ...p, [ws]: false }));
@@ -74,7 +74,7 @@ export default function StaffAvailability() {
 
   const setTime = (ws: string, day: string, field: "from" | "to", value: string) => {
     const slots = getWeek(ws);
-    const current = slots[day] ?? { from: "08:00", to: "18:00" };
+    const current = slots[day] ?? { from: "00:00", to: "23:59" };
     setAvail((p) => ({ ...p, [ws]: { ...slots, [day]: { ...current, [field]: value } } }));
     setSaved((p) => ({ ...p, [ws]: false }));
   };

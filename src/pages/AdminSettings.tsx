@@ -1315,7 +1315,7 @@ function BookingAvailabilityControl() {
                       </div>
 
                       {isDayEnabled && (
-                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-11 gap-1.5 pt-1 border-t border-gray-100">
+                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-1.5 pt-1 border-t border-gray-100">
                           {START_HOURS.map((slot) => {
                             const isSlotActive = activeSlots.includes(slot);
                             return (

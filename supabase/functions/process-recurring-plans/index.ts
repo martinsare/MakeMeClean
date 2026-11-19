@@ -54,7 +54,7 @@ function buildTimeSlot(startTime: string | null | undefined, durationHours: numb
   const [h, m] = cleanStart.split(":").map(Number);
   const dur = Number.isFinite(Number(durationHours)) && Number(durationHours) > 0 ? Number(durationHours) : 2;
   const endTotal = h * 60 + m + Math.round(dur * 60);
-  const endH = String(Math.floor(endTotal / 60)).padStart(2, "0");
+  const endH = String(Math.floor(endTotal / 60) % 24).padStart(2, "0");
   const endM = String(endTotal % 60).padStart(2, "0");
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} – ${endH}:${endM}`;
 }

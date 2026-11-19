@@ -9,6 +9,7 @@ export const SETTING_DEFAULTS: Record<string, string> = {
     "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly.",
   business_phone: "+44 7362 068202",
   contact_email: "contact@makemeclean.co.uk",
+  business_hours: "24/7",
   email_info: "info@makemeclean.co.uk",
   email_payment: "payment@makemeclean.co.uk",
   email_recruitment: "recruitment@makemeclean.co.uk",

@@ -735,7 +735,7 @@ export default function BookingPage() {
     minDate.getMonth() + 1
   ).padStart(2, "0")}-${String(minDate.getDate()).padStart(2, "0")}`;
 
-  // Calculate if there are still daytime slots left today (latest start hour is 17:00)
+  // Calculate if there are still slots left today across the 24/7 schedule
   const currentHour = minDate.getHours();
   const currentMinute = minDate.getMinutes();
   const remainingTodaySlots = START_HOURS.filter((h) => {
@@ -745,7 +745,7 @@ export default function BookingPage() {
     );
   });
 
-  // If today has already passed 17:00 (no daytime slots remaining), min selectable date moves to tomorrow
+  // If today has already passed all available slots, min selectable date moves to tomorrow
   const minSelectableDate = new Date();
   if (remainingTodaySlots.length === 0) {
     minSelectableDate.setDate(minSelectableDate.getDate() + 1);

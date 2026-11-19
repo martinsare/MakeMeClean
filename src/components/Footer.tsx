@@ -190,9 +190,9 @@ export default function Footer() {
             {settings.business_hours && (
               <div className="mt-6 p-3 bg-green-950/60 border border-green-900/50 rounded-xl">
                 <p className="text-xs text-green-300 font-semibold">
-                  Available 7 days a week
+                  Available 24/7
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-400 mt-0.5">
                   {settings.business_hours}
                 </p>
               </div>

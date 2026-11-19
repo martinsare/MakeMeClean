@@ -359,7 +359,7 @@ export async function handleBookings(
         );
       }
 
-      if (startHour != null && (typeof startHour !== 'string' || !/^(0[7-9]|1[0-7]):(00|30)$/.test(startHour))) {
+      if (startHour != null && (typeof startHour !== 'string' || !/^(0\d|1\d|2[0-3]):(00|30)$/.test(startHour))) {
         return sendError(res, 'Booking start time is invalid.', 400);
       }
       if (!timeSlot && startHour) {
@@ -367,7 +367,7 @@ export async function handleBookings(
       } else if (timeSlot) {
         if (
           typeof timeSlot !== 'string' ||
-          !/^(0[7-9]|1[0-7]):(00|30)\s*[-–]\s*(0\d|1\d|2[0-9]):(00|30)$/.test(timeSlot)
+          !/^(0\d|1\d|2[0-3]):(00|30)\s*[-–]\s*(0\d|1\d|2[0-3]):(00|30)$/.test(timeSlot)
         ) {
           return sendError(res, 'Booking time slot is invalid.', 400);
         }

@@ -168,7 +168,7 @@ export default function ServiceTerms() {
               </li>
               <li>Provide accurate access instructions and contact numbers</li>
               <li>
-                Respect cleaner working hours ({settings.business_hours || "7 days a week, 8am–8pm"}; standard booking start slots 07:00–17:00)
+                Respect cleaner working hours ({settings.business_hours || "24/7"}; booking start slots available 24/7 round the clock)
               </li>
               <li>Report any accidents or property damage immediately</li>
             </ul>

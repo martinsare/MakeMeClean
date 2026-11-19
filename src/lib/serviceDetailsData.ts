@@ -49,7 +49,7 @@ export const defaultServiceDetail: ServiceDetailConfig = {
   },
   steps: [
     { step: "01", title: "Select your service", desc: "Choose hours, property size, and any specialist add-ons with instant price calculation." },
-    { step: "02", title: "Book your time slot", desc: "Pick your preferred date and time, 7 days a week from 8:00 to 20:00." },
+    { step: "02", title: "Book your time slot", desc: "Pick your preferred date and time, 24/7 round the clock." },
     { step: "03", title: "Relax & pay post-clean", desc: "Your vetted cleaner arrives on time. Payment is only settled after the clean is finished." },
   ],
   faqs: [

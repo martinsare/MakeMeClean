@@ -44,7 +44,7 @@ export async function handleSettings(req: VercelRequest, res: VercelResponse) {
       discount_monthly: '5',
       business_phone: '+44 7362 068202',
       contact_email: 'contact@makemeclean.co.uk',
-      business_hours: '7 days a week, 8am–8pm',
+      business_hours: '24/7',
       email_info: 'info@makemeclean.co.uk',
       email_recruitment: 'recruitment@makemeclean.co.uk',
       email_payment: 'payment@makemeclean.co.uk',
