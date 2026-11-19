@@ -3,19 +3,55 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-function corsHeaders() {
-  const origin = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+function isAllowedOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "makemeclean.co.uk" ||
+      host.endsWith(".makemeclean.co.uk") ||
+      host === "localhost" ||
+      host === "127.0.0.1"
+    ) {
+      return true;
+    }
+    const configured = [
+      Deno.env.get("ALLOWED_ORIGIN") ?? "",
+      Deno.env.get("SITE_URL") ?? "",
+      ...(Deno.env.get("CORS_ALLOWED_ORIGINS") ?? "").split(","),
+    ];
+    for (const entry of configured) {
+      const trimmed = entry.trim();
+      if (!trimmed || trimmed === "*") continue;
+      try {
+        const candidate = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+        if (candidate.origin === url.origin) return true;
+      } catch {
+        // ignore invalid origin
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function corsHeaders(req?: Request) {
+  const reqOrigin = req?.headers.get("origin") ?? "";
+  const fallback = Deno.env.get("ALLOWED_ORIGIN") || Deno.env.get("SITE_URL") || "https://makemeclean.co.uk";
+  const origin = reqOrigin && isAllowedOrigin(reqOrigin) ? new URL(reqOrigin).origin : fallback;
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
   };
 }
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
 
@@ -100,13 +136,13 @@ function buildReplyEmail(args: {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders() });
-  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders(req) });
+  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" }, req);
 
   try {
     const supabaseUrl  = mustGetEnv("SUPABASE_URL");
     const serviceKey   = mustGetEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey      = mustGetEnv("ANON_KEY");
+    const anonKey      = Deno.env.get("SUPABASE_ANON_KEY") ?? mustGetEnv("ANON_KEY");
 
     // Verify caller is an authenticated admin
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -114,16 +150,16 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: authData, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorised" });
+    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorised" }, req);
 
     const adminClient = createClient(supabaseUrl, serviceKey);
     const { data: adminRow } = await adminClient
       .from("admins").select("user_id").eq("user_id", authData.user.id).maybeSingle();
-    if (!adminRow) return json(403, { ok: false, error: "Forbidden" });
+    if (!adminRow) return json(403, { ok: false, error: "Forbidden" }, req);
 
     const { messageId, replyText } = (await req.json()) as { messageId?: string; replyText?: string };
-    if (!messageId)  return json(400, { ok: false, error: "Missing messageId" });
-    if (!replyText?.trim()) return json(400, { ok: false, error: "Reply text is empty" });
+    if (!messageId)  return json(400, { ok: false, error: "Missing messageId" }, req);
+    if (!replyText?.trim()) return json(400, { ok: false, error: "Reply text is empty" }, req);
 
     // Fetch the contact message
     const { data: msg, error: msgErr } = await adminClient
@@ -131,11 +167,11 @@ Deno.serve(async (req) => {
       .select("id, name, email, subject, message")
       .eq("id", messageId)
       .single();
-    if (msgErr || !msg) return json(404, { ok: false, error: "Message not found" });
+    if (msgErr || !msg) return json(404, { ok: false, error: "Message not found" }, req);
 
     // Send reply via Brevo
     const brevoKey = Deno.env.get("BREVO_API_KEY");
-    if (!brevoKey) return json(500, { ok: false, error: "BREVO_API_KEY not configured" });
+    if (!brevoKey) return json(500, { ok: false, error: "BREVO_API_KEY not configured" }, req);
 
     const subject  = msg.subject ? `Re: ${msg.subject}` : "Reply from MakeMeClean";
     const htmlBody = buildReplyEmail({
@@ -164,7 +200,7 @@ Deno.serve(async (req) => {
     if (!brevoRes.ok) {
       const text = await brevoRes.text().catch(() => "");
       console.error(`[reply-contact] Brevo error ${brevoRes.status}: ${text}`);
-      return json(502, { ok: false, error: `Email delivery failed (${brevoRes.status})` });
+      return json(502, { ok: false, error: `Email delivery failed (${brevoRes.status})` }, req);
     }
 
     // Mark message as replied
@@ -173,8 +209,9 @@ Deno.serve(async (req) => {
       .update({ status: "replied" })
       .eq("id", messageId);
 
-    return json(200, { ok: true });
+    return json(200, { ok: true }, req);
   } catch (e) {
-    return json(500, { ok: false, error: String((e as any)?.message ?? e) });
+    console.error("[reply-contact] error:", e);
+    return json(500, { ok: false, error: "Internal server error" }, req);
   }
 });

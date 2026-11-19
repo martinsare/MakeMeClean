@@ -4,7 +4,7 @@ import { Lock, CheckCircle, AlertCircle, ArrowLeft } from "lucide-react";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, isBookingStartTimePassed } from "@/lib/utils";
 import { Booking } from "@/types";
 import { flushPaymentConfirmations, queuePaymentConfirmation } from "@/lib/paymentConfirmations";
 
@@ -19,14 +19,9 @@ export default function PaymentPage() {
   const [message, setMessage] = useState("");
   const sessionId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
 
-  const getSlotStart = (timeSlot: string | null | undefined) =>
-    timeSlot?.match(/\b(\d{2}:\d{2})\b/)?.[1] ?? null;
-
   const isFutureBooking = (candidate: Booking | null) => {
     if (!candidate) return false;
-    const startTime = getSlotStart(candidate.time_slot);
-    if (!startTime) return false;
-    return new Date(`${candidate.date}T${startTime}:00`).getTime() > Date.now();
+    return !isBookingStartTimePassed(candidate.date, candidate.time_slot);
   };
 
   useEffect(() => {
@@ -56,7 +51,7 @@ export default function PaymentPage() {
 
     let cancelled = false;
     setStep("processing");
-    setMessage("We\'re confirming your Stripe payment...");
+    setMessage("We're confirming your Stripe payment...");
     queuePaymentConfirmation(params.bookingId, sessionId);
     void flushPaymentConfirmations();
 
@@ -194,26 +189,7 @@ export default function PaymentPage() {
     );
   }
 
-  if (booking.status === "cancelled" || !isFutureBooking(booking)) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-extrabold text-gray-900 mb-2">
-            Booking Expired
-          </h1>
-          <p className="text-gray-500 mb-6">
-            The scheduled appointment time for this booking has passed, so payment is no longer accepted. Please reschedule or book a new clean.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={() => setLocation(`/bookings/${booking.id}`)} className="btn-secondary">View Booking</button>
-            <button onClick={() => setLocation("/book")} className="btn-primary">Book New Clean</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // Check paid / success BEFORE checking expired/cancelled so paid past bookings never show "Booking Expired"
   if (booking.payment_status === "paid" || step === "success") return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center animate-fade-in">
@@ -237,6 +213,26 @@ export default function PaymentPage() {
       </div>
     </div>
   );
+
+  if (booking.status === "cancelled" || !isFutureBooking(booking)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center">
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-extrabold text-gray-900 mb-2">
+            Booking Expired
+          </h1>
+          <p className="text-gray-500 mb-6">
+            The scheduled appointment time for this booking has passed, so payment is no longer accepted. Please reschedule or book a new clean.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button onClick={() => setLocation(`/bookings/${booking.id}`)} className="btn-secondary">View Booking</button>
+            <button onClick={() => setLocation("/book")} className="btn-primary">Book New Clean</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (step === "error") return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -291,7 +287,8 @@ export default function PaymentPage() {
               <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded">CARD</span>
             </div>
           </div>
-          {step === "processing" ? (
+
+          {step === "processing" ? (
             <div className="py-12 text-center">
               <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="font-semibold text-gray-700">{message || "Processing payment..."}</p>

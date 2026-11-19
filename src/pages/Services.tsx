@@ -219,7 +219,7 @@ export default function Services() {
                       Learn more
                     </Link>
                     <Link
-                      href={`/book?service=${card.primaryServiceId}`}
+                      href={`/book/${card.primaryServiceId}`}
                       className="btn-primary text-xs font-bold py-2 px-4 flex items-center gap-1.5 shadow-xs"
                     >
                       Book this clean <ArrowRight className="w-3.5 h-3.5" />

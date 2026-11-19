@@ -5,6 +5,7 @@ import { useIsAdmin } from "@/hooks/useRole";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { supabase } from "@/lib/supabase";
 import { cn, formatDate } from "@/lib/utils";
+import { api } from "@/lib/apiClient";
 
 interface Reward {
   id: string;
@@ -66,12 +67,15 @@ export default function AdminLoyalty() {
 
     setRewards((rws ?? []) as Reward[]);
 
-    // Fetch user details separately to avoid RLS issues
-    const userIds = (pts ?? []).map((p: any) => p.user_id);
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", userIds);
+    // Fetch user details separately (deduplicated & guarded against empty IN list)
+    const userIds = [...new Set((pts ?? []).map((p: any) => p.user_id).filter(Boolean))];
+    const { data: profiles } =
+      userIds.length > 0
+        ? await supabase
+            .from("profiles")
+            .select("id, full_name")
+            .in("id", userIds)
+        : { data: [] as any[] };
     const profileMap: Record<string, any> = {};
     for (const p of profiles ?? []) profileMap[p.id] = p;
 
@@ -103,22 +107,18 @@ export default function AdminLoyalty() {
     setAwarding(true);
     setAwardMsg(null);
     try {
-      const { data: profile, error: pErr } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", awardEmail.trim().toLowerCase())
-        .maybeSingle();
+      const pts = parseInt(awardPoints, 10);
+      if (!Number.isInteger(pts) || pts === 0) {
+        throw new Error("Please enter a valid non-zero point amount.");
+      }
 
-      if (pErr || !profile) throw new Error("Customer not found with that email");
-
-      const { error: err } = await supabase.from("loyalty_points").insert({
-        user_id: profile.id,
-        points: parseInt(awardPoints) || 50,
+      await api.awardLoyaltyPoints({
+        email: awardEmail.trim().toLowerCase(),
+        points: pts,
         reason: awardReason.trim(),
       });
 
-      if (err) throw new Error(err.message);
-      setAwardMsg({ ok: true, text: `Awarded ${awardPoints} points to ${awardEmail}` });
+      setAwardMsg({ ok: true, text: `Awarded ${pts} points to ${awardEmail.trim().toLowerCase()}` });
       setAwardEmail("");
       setAwardReason("");
       setAwardPoints("50");
@@ -153,12 +153,22 @@ export default function AdminLoyalty() {
   };
 
   const toggleReward = async (id: string, active: boolean) => {
-    await supabase.from("loyalty_rewards").update({ active: !active }).eq("id", id);
+    setRewardMsg(null);
+    const { error } = await supabase.from("loyalty_rewards").update({ active: !active }).eq("id", id);
+    if (error) {
+      setRewardMsg({ ok: false, text: error.message });
+      return;
+    }
     await fetchAll();
   };
 
   const deleteReward = async (id: string) => {
-    await supabase.from("loyalty_rewards").delete().eq("id", id);
+    setRewardMsg(null);
+    const { error } = await supabase.from("loyalty_rewards").delete().eq("id", id);
+    if (error) {
+      setRewardMsg({ ok: false, text: error.message });
+      return;
+    }
     await fetchAll();
   };
 

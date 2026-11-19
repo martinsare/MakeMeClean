@@ -24,6 +24,26 @@ export class ErrorBoundary extends Component<Props, State> {
     if (import.meta.env.DEV) {
       console.error("Application render error:", error, errorInfo);
     }
+    try {
+      const payload = JSON.stringify({
+        url: typeof window !== "undefined" ? window.location.href : "",
+        message: error?.message || "Unknown render error",
+        stack: error?.stack || "",
+        componentStack: errorInfo?.componentStack || "",
+      });
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon("/api/client-error", new Blob([payload], { type: "application/json" }));
+      } else {
+        fetch("/api/client-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {
+      // Never throw inside ErrorBoundary reporter
+    }
   }
 
   private handleReset = () => {

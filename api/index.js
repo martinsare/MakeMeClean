@@ -13895,6 +13895,9 @@ var require_main3 = __commonJS({
   }
 });
 
+// server/_lib/server.ts
+import crypto2 from "node:crypto";
+
 // node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
 __export(dist_exports, {
@@ -22257,18 +22260,114 @@ function parseBookingExtras(value) {
   return extras;
 }
 function parseDurationMultipliers(values) {
-  const read = (key, fallback) => {
-    const value = values?.[key];
+  const read = (primaryKey, aliasKey, fallback) => {
+    const rawPrimary = values?.[primaryKey];
+    const value = rawPrimary != null && rawPrimary !== "" ? rawPrimary : values?.[aliasKey];
     if (value == null || value === "") return fallback;
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
-  const base = read("room_calc_base_hours", DEFAULT_DURATION_MULTIPLIERS.base);
-  const bed = read("room_calc_bed_hours", DEFAULT_DURATION_MULTIPLIERS.bed);
-  const bath = read("room_calc_bath_hours", DEFAULT_DURATION_MULTIPLIERS.bath);
-  const living = read("room_calc_living_hours", DEFAULT_DURATION_MULTIPLIERS.living);
+  const base = read("room_calc_base_hours", "base", DEFAULT_DURATION_MULTIPLIERS.base);
+  const bed = read("room_calc_bed_hours", "bed", DEFAULT_DURATION_MULTIPLIERS.bed);
+  const bath = read("room_calc_bath_hours", "bath", DEFAULT_DURATION_MULTIPLIERS.bath);
+  const living = read("room_calc_living_hours", "living", DEFAULT_DURATION_MULTIPLIERS.living);
   if (base == null || bed == null || bath == null || living == null) return null;
   return { base, bed, bath, living };
+}
+function getServiceCategory(serviceIdOrName) {
+  const s = (serviceIdOrName || "").toLowerCase();
+  if (s === "ironing-service" || s.includes("ironing service") || s.includes("ironing") && !s.includes("cleaning")) {
+    return "ironing";
+  }
+  if (s === "cleaning-and-ironing" || s.includes("cleaning and ironing") || s.includes("cleaning & ironing")) {
+    return "cleaning_ironing";
+  }
+  if (s === "office-cleaning" || s.includes("office") || s.includes("commercial")) {
+    return "office";
+  }
+  if (s === "airbnb-cleaning" || s.includes("airbnb") || s.includes("holiday") || s.includes("short-let")) {
+    return "airbnb";
+  }
+  return "domestic";
+}
+var SERVICE_CATEGORY_EXTRAS = {
+  ironing: [
+    { id: "wash_fold", label: "Wash & Fold Cycle", icon: "\u{1FAE7}", duration: 1, desc: "Run washing machine cycle & tumble/air dry" },
+    { id: "bed_linen_change", label: "Fresh Bed Making", icon: "\u{1F6CF}\uFE0F", duration: 0.5, desc: "Strip and redress beds with ironed linens" },
+    { id: "hangers_folding", label: "Wardrobe Staging", icon: "\u{1F457}", duration: 0.5, desc: "Sort onto hangers & colour-coordinated fold" },
+    { id: "steam_press", label: "Steam Touch-Up", icon: "\u{1F4A8}", duration: 0.5, desc: "Delicate vertical steam freshening" }
+  ],
+  cleaning_ironing: [
+    { id: "inside_oven", label: "Inside Oven & Grill", icon: "\u{1F373}", duration: 0.75, desc: "Deep degreasing & rack soaking" },
+    { id: "inside_fridge", label: "Inside Fridge / Freezer", icon: "\u2744\uFE0F", duration: 0.5, desc: "Shelves washed & sanitized" },
+    { id: "bed_linen_change", label: "Bed Linen Change", icon: "\u{1F6CF}\uFE0F", duration: 0.5, desc: "Fresh bedsheets changed & made up" },
+    { id: "inside_windows", label: "Interior Window Glass", icon: "\u{1FA9F}", duration: 0.5, desc: "Internal panes & sills buffed" }
+  ],
+  office: [
+    { id: "kitchenette_deep", label: "Kitchenette & Microwave", icon: "\u2615", duration: 0.75, desc: "Coffee machines, sink, fridge & counters" },
+    { id: "it_sanitise", label: "IT & Phone Sanitisation", icon: "\u2328\uFE0F", duration: 0.75, desc: "Antiviral wipe of keyboards, mice & screens" },
+    { id: "glass_partitions", label: "Glass Partitions & Doors", icon: "\u{1FA9F}", duration: 0.5, desc: "Meeting room glass buffed streak-free" },
+    { id: "bin_recycling", label: "Waste & Recycling Sort", icon: "\u267B\uFE0F", duration: 0.5, desc: "Central collection & recycling liners changed" }
+  ],
+  airbnb: DEFAULT_BOOKING_EXTRAS,
+  domestic: DEFAULT_BOOKING_EXTRAS
+};
+var SERVICE_CATEGORY_FIELD_LIMITS = {
+  ironing: { field1Max: 8, field2Max: 20, field3Max: 8 },
+  cleaning_ironing: { field1Max: 8, field2Max: 6, field3Max: 6 },
+  office: { field1Max: 50, field2Max: 12, field3Max: 8 },
+  airbnb: { field1Max: 8, field2Max: 6, field3Max: 5 },
+  domestic: {
+    field1Max: MAX_ROOM_COUNTS.bedrooms,
+    field2Max: MAX_ROOM_COUNTS.bathrooms,
+    field3Max: MAX_ROOM_COUNTS.livingAreas
+  }
+};
+function getAllowedExtrasForService(serviceIdOrName, configuredDomesticExtras = DEFAULT_BOOKING_EXTRAS) {
+  const category = getServiceCategory(serviceIdOrName);
+  if (category === "domestic") {
+    return configuredDomesticExtras;
+  }
+  return SERVICE_CATEGORY_EXTRAS[category];
+}
+function getServiceFieldLimits(serviceIdOrName) {
+  return SERVICE_CATEGORY_FIELD_LIMITS[getServiceCategory(serviceIdOrName)];
+}
+function calculateRecommendedHoursForService(serviceIdOrName, val1, val2, val3, selectedExtraIds, multipliers = DEFAULT_DURATION_MULTIPLIERS, configuredDomesticExtras = DEFAULT_BOOKING_EXTRAS) {
+  const category = getServiceCategory(serviceIdOrName);
+  const extras = getAllowedExtrasForService(serviceIdOrName, configuredDomesticExtras);
+  if (category === "ironing") {
+    let hours = val1 * 1 + val2 * 0.1 + val3 * 0.35;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+  if (category === "office") {
+    let hours = 1 + val1 * 0.1 + val2 * 0.5 + val3 * 0.5;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+  if (category === "cleaning_ironing") {
+    let hours = 1.5 + val1 * 0.5 + val2 * 0.5 + val3 * 1;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+  return calculateRecommendedHours(
+    val1,
+    val2,
+    val3,
+    selectedExtraIds,
+    multipliers,
+    extras
+  );
 }
 function calculateRecommendedHours(beds, baths, livingAreas, selectedExtraIds, multipliers = DEFAULT_DURATION_MULTIPLIERS, extras = DEFAULT_BOOKING_EXTRAS) {
   let hours = multipliers.base + (beds - 1) * multipliers.bed + (baths - 1) * multipliers.bath + (livingAreas - 1) * multipliers.living;
@@ -22298,13 +22397,63 @@ function calculateDurationHours(timeSlot) {
   const duration = (endMinutes - startMinutes) / 60;
   return duration > 0 ? duration : 2;
 }
-function isBookingStartTimePassed(dateStr, timeSlot) {
-  if (!dateStr) return false;
+function getUkNowParts(now = /* @__PURE__ */ new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(now);
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? "00";
+  const dateStr = `${part("year")}-${part("month")}-${part("day")}`;
+  const rawHour = Number(part("hour"));
+  const hour = rawHour === 24 ? 0 : rawHour;
+  const minute = Number(part("minute"));
+  return {
+    dateStr,
+    hour,
+    minute,
+    totalMinutes: hour * 60 + minute
+  };
+}
+function getHoursUntilBookingStart(dateStr, timeSlot, now = /* @__PURE__ */ new Date()) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return 0;
   const startHourStr = (timeSlot || "09:00").split(/[-–]/)[0]?.trim() || "09:00";
   const [hour, min] = startHourStr.split(":").map(Number);
-  const scheduledTime = /* @__PURE__ */ new Date(`${dateStr}T${String(hour || 9).padStart(2, "0")}:${String(min || 0).padStart(2, "0")}:00`);
-  const now = /* @__PURE__ */ new Date();
-  return Number.isFinite(scheduledTime.getTime()) && now > scheduledTime;
+  const startMinutes = (Number.isFinite(hour) ? hour : 9) * 60 + (Number.isFinite(min) ? min : 0);
+  const ukNow = getUkNowParts(now);
+  const targetDayUtc = Date.UTC(
+    Number(dateStr.slice(0, 4)),
+    Number(dateStr.slice(5, 7)) - 1,
+    Number(dateStr.slice(8, 10))
+  );
+  const nowDayUtc = Date.UTC(
+    Number(ukNow.dateStr.slice(0, 4)),
+    Number(ukNow.dateStr.slice(5, 7)) - 1,
+    Number(ukNow.dateStr.slice(8, 10))
+  );
+  const dayDiffMinutes = Math.round((targetDayUtc - nowDayUtc) / 6e4);
+  return (dayDiffMinutes + startMinutes - ukNow.totalMinutes) / 60;
+}
+function calculateBookingPrice(params) {
+  const rate = Number.isFinite(params.baseHourlyRate) && params.baseHourlyRate > 0 ? params.baseHourlyRate : 20;
+  const duration = Number.isFinite(params.durationHours) && params.durationHours > 0 ? params.durationHours : 2;
+  const svcPct = Math.max(0, Math.min(100, Number(params.serviceDiscountPercent) || 0));
+  const recPct = Math.max(0, Math.min(100, Number(params.recurringDiscountPercent) || 0));
+  const basePrice = Math.round(rate * duration * 100) / 100;
+  const afterServiceDiscount = Math.round(rate * duration * (1 - svcPct / 100) * 100) / 100;
+  const multiplier = (1 - svcPct / 100) * (1 - recPct / 100);
+  const cappedMultiplier = Math.max(0.5, multiplier);
+  const effectiveDiscountPercent = Math.round((1 - cappedMultiplier) * 1e4) / 100;
+  const finalPrice = Math.round(rate * duration * cappedMultiplier * 100) / 100;
+  return { basePrice, afterServiceDiscount, effectiveDiscountPercent, finalPrice };
+}
+function isBookingStartTimePassed(dateStr, timeSlot) {
+  if (!dateStr) return false;
+  return getHoursUntilBookingStart(dateStr, timeSlot) <= 0;
 }
 
 // server/_lib/server.ts
@@ -22334,9 +22483,24 @@ var SITE_URL = getEnv("SITE_URL", "https://makemeclean.co.uk").replace(/\/$/, ""
 var STRIPE_SECRET_KEY = getEnv("STRIPE_SECRET_KEY", "");
 var TELEGRAM_BOT_TOKEN = getEnv("TELEGRAM_BOT_TOKEN", "");
 var TELEGRAM_CHAT_ID = getEnv("TELEGRAM_CHAT_ID", "");
+function getAdminSupabase() {
+  const url = getEnv("SUPABASE_URL");
+  const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) {
+    throw new Error("Supabase URL or Service Role Key missing in server environment variables.");
+  }
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
 function getServerSupabase(token) {
   const url = getEnv("SUPABASE_URL");
-  const key = getEnv("SUPABASE_SERVICE_ROLE_KEY") || getEnv("SUPABASE_ANON_KEY");
+  const anonKey = getEnv("SUPABASE_ANON_KEY");
+  const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const key = token ? anonKey || serviceKey : serviceKey || anonKey;
   if (!url || !key) {
     throw new Error("Supabase URL or Key missing in server environment variables.");
   }
@@ -22359,21 +22523,19 @@ function isOriginAllowed(origin) {
     if (host === "makemeclean.co.uk" || host.endsWith(".makemeclean.co.uk") || host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
       return true;
     }
-    if (host.endsWith(".vercel.app")) {
-      return true;
-    }
-    if (host.endsWith(".replit.dev") || host.endsWith(".replit.app")) {
+    const vercelUrl = getEnv("VERCEL_URL");
+    if (vercelUrl && host === vercelUrl.replace(/^https?:\/\//i, "").toLowerCase()) {
       return true;
     }
     const configured = [
       getEnv("SITE_URL"),
-      ...getEnv("CORS_ALLOWED_ORIGINS").split(","),
-      ...getEnv("REPLIT_DOMAINS").split(",")
+      ...getEnv("CORS_ALLOWED_ORIGINS").split(",")
     ];
     for (const entry of configured) {
-      if (!entry.trim()) continue;
+      const trimmed = entry.trim();
+      if (!trimmed || trimmed === "*") continue;
       try {
-        if (new URL(entry.trim().startsWith("http") ? entry.trim() : "https://" + entry.trim()).origin === url.origin) {
+        if (new URL(trimmed.startsWith("http") ? trimmed : "https://" + trimmed).origin === url.origin) {
           return true;
         }
       } catch (_) {
@@ -22386,20 +22548,13 @@ function isOriginAllowed(origin) {
 }
 function handleCors(req, res) {
   const requestOrigin = req.headers.origin;
-  if (requestOrigin) {
-    if (isOriginAllowed(requestOrigin)) {
-      try {
-        const originUrl = new URL(requestOrigin).origin;
-        res.setHeader("Access-Control-Allow-Origin", originUrl);
-        res.setHeader("Access-Control-Allow-Credentials", "true");
-        res.setHeader("Vary", "Origin");
-      } catch (_) {
-        res.setHeader("Access-Control-Allow-Origin", "*");
-      }
-    } else {
-      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+  if (requestOrigin && isOriginAllowed(requestOrigin)) {
+    try {
+      const originUrl = new URL(requestOrigin).origin;
+      res.setHeader("Access-Control-Allow-Origin", originUrl);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Vary", "Origin");
+    } catch (_) {
     }
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
@@ -22451,13 +22606,64 @@ async function verifyAuth(req) {
     return { user: null, supabase: null, error: "Authentication failed" };
   }
 }
+function escapeTelegramMarkdown(value) {
+  return String(value ?? "").replace(/([_*`[\]])/g, "\\$1");
+}
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return xff.split(",")[0].trim().slice(0, 64);
+  }
+  const realIp = req.headers["x-real-ip"];
+  if (typeof realIp === "string" && realIp.trim()) {
+    return realIp.trim().slice(0, 64);
+  }
+  return req.socket?.remoteAddress || "unknown";
+}
+var memoryRateLimits = /* @__PURE__ */ new Map();
+async function checkServerRateLimit(key, maxRequests, windowSeconds) {
+  try {
+    const admin = getAdminSupabase();
+    const { data, error } = await admin.rpc("check_rate_limit", {
+      p_key: key,
+      p_max_requests: maxRequests,
+      p_window_seconds: windowSeconds
+    });
+    if (!error && typeof data === "boolean") {
+      return data;
+    }
+  } catch {
+  }
+  const now = Date.now();
+  const entry = memoryRateLimits.get(key);
+  if (!entry || entry.resetAt <= now) {
+    memoryRateLimits.set(key, { count: 1, resetAt: now + windowSeconds * 1e3 });
+    return true;
+  }
+  if (entry.count >= maxRequests) {
+    return false;
+  }
+  entry.count += 1;
+  return true;
+}
 function generateInvoiceNumber() {
   const now = /* @__PURE__ */ new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
-  const randomSuffix = Math.floor(1e3 + Math.random() * 9e3);
+  const randomSuffix = crypto2.randomBytes(4).toString("hex").toUpperCase();
   return `INV-${year}${month}${day}-${randomSuffix}`;
+}
+async function generateInvoiceNumberAsync(adminSupabase) {
+  try {
+    const client = adminSupabase || getAdminSupabase();
+    const { data, error } = await client.rpc("next_invoice_number");
+    if (!error && typeof data === "string" && data.trim()) {
+      return data.trim();
+    }
+  } catch {
+  }
+  return generateInvoiceNumber();
 }
 function resolveServiceImageUrl(serviceId, dbImageUrl) {
   if (dbImageUrl && dbImageUrl.startsWith("http")) {
@@ -22554,6 +22760,37 @@ async function handleServices(req, res) {
 }
 
 // server/_handlers/settings.ts
+var PUBLIC_SETTING_KEYS = /* @__PURE__ */ new Set([
+  "discount_weekly",
+  "discount_fortnightly",
+  "discount_biweekly",
+  "discount_monthly",
+  "business_phone",
+  "contact_email",
+  "business_hours",
+  "email_info",
+  "email_recruitment",
+  "email_payment",
+  "email_payroll",
+  "loyalty_enabled",
+  "booking_enabled",
+  "booking_disabled_message",
+  "booking_availability_schedule",
+  "booking_extras",
+  "room_calc_base_hours",
+  "room_calc_bed_hours",
+  "room_calc_bath_hours",
+  "room_calc_living_hours",
+  "vat_registered",
+  "vat_number",
+  "company_legal_name",
+  "company_reg_number",
+  "company_registered_address",
+  "social_facebook",
+  "social_instagram",
+  "social_twitter",
+  "social_linkedin"
+]);
 async function handleSettings(req, res) {
   if (req.method !== "GET") {
     return sendError(res, "Method not allowed", 405);
@@ -22572,21 +22809,29 @@ async function handleSettings(req, res) {
       email_payroll: "payroll@makemeclean.co.uk",
       loyalty_enabled: "false",
       booking_enabled: "true",
-      booking_disabled_message: "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly."
+      booking_disabled_message: "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly.",
+      vat_registered: "false",
+      vat_number: "",
+      company_legal_name: "MakeMeClean Ltd",
+      company_reg_number: "",
+      company_registered_address: "Wales, United Kingdom"
     };
     const supabase = getServerSupabase();
-    const { data, error } = await supabase.from("settings").select("key, value");
+    const { data, error } = await supabase.from("settings").select("key, value").in("key", Array.from(PUBLIC_SETTING_KEYS));
     if (error) {
       return sendSuccess(res, settingsMap);
     }
     if (data) {
       for (const row of data) {
-        settingsMap[row.key] = row.value;
+        if (PUBLIC_SETTING_KEYS.has(row.key)) {
+          settingsMap[row.key] = row.value;
+        }
       }
     }
     return sendSuccess(res, settingsMap);
   } catch (err) {
-    return sendError(res, err?.message || "Failed to fetch settings", 500);
+    console.error("[settings] error:", err);
+    return sendError(res, "Failed to fetch settings", 500);
   }
 }
 
@@ -22691,9 +22936,131 @@ async function handleBookingOptions(req, res) {
   }
 }
 
+// server/_handlers/loyalty.ts
+function computeLoyaltyTier(points) {
+  if (points >= 2500) {
+    return {
+      tier: "Platinum",
+      discountPercent: 15,
+      nextTierName: "Max Tier",
+      nextTierPoints: 2500,
+      progressPercent: 100
+    };
+  }
+  if (points >= 1e3) {
+    return {
+      tier: "Gold",
+      discountPercent: 10,
+      nextTierName: "Platinum",
+      nextTierPoints: 2500,
+      progressPercent: Math.min(100, Math.round((points - 1e3) / 1500 * 100))
+    };
+  }
+  if (points >= 500) {
+    return {
+      tier: "Silver",
+      discountPercent: 5,
+      nextTierName: "Gold",
+      nextTierPoints: 1e3,
+      progressPercent: Math.min(100, Math.round((points - 500) / 500 * 100))
+    };
+  }
+  return {
+    tier: "Bronze",
+    discountPercent: 0,
+    nextTierName: "Silver",
+    nextTierPoints: 500,
+    progressPercent: Math.min(100, Math.round(points / 500 * 100))
+  };
+}
+async function handleLoyalty(req, res) {
+  const { user, supabase, error: authError } = await verifyAuth(req);
+  if (authError || !user || !supabase) {
+    return sendError(res, authError || "Unauthorized", 401);
+  }
+  if (req.method === "POST") {
+    try {
+      const admin = getAdminSupabase();
+      const { data: adminRow } = await admin.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+      if (!adminRow) {
+        return sendError(res, "Forbidden: Admin access required", 403);
+      }
+      const body = req.body || {};
+      const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      const explicitUserId = typeof body.userId === "string" ? body.userId.trim() : "";
+      const points = Number(body.points);
+      const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 200) : "Admin bonus";
+      if (!Number.isInteger(points) || points === 0 || Math.abs(points) > 1e5) {
+        return sendError(res, "Points must be a non-zero integer within valid limits.", 400);
+      }
+      let targetUserId = explicitUserId;
+      if (!targetUserId && email) {
+        const { data: resolvedId, error: rpcErr } = await admin.rpc("get_auth_user_id_by_email", {
+          p_email: email
+        });
+        if (rpcErr || !resolvedId) {
+          return sendError(res, `No user found with email "${email}".`, 404);
+        }
+        targetUserId = String(resolvedId);
+      }
+      if (!targetUserId) {
+        return sendError(res, "Either email or userId is required.", 400);
+      }
+      const { data: inserted, error: insertErr } = await admin.from("loyalty_points").insert({
+        user_id: targetUserId,
+        points,
+        reason
+      }).select().single();
+      if (insertErr) {
+        return sendError(res, insertErr.message, 500);
+      }
+      return sendSuccess(res, inserted, 201);
+    } catch (err) {
+      console.error("[loyalty POST] error:", err);
+      return sendError(res, "Failed to award loyalty points", 500);
+    }
+  }
+  if (req.method !== "GET") {
+    return sendError(res, "Method not allowed", 405);
+  }
+  try {
+    const [{ data: ledgerRows, error }, { data: settingRow }] = await Promise.all([
+      supabase.from("loyalty_points").select("points").eq("user_id", user.id),
+      supabase.from("settings").select("value").eq("key", "loyalty_enabled").maybeSingle()
+    ]);
+    const isEnabled = settingRow?.value === "true";
+    if (error && error.code !== "PGRST116") {
+      return sendError(res, error.message, 500);
+    }
+    const points = Math.max(
+      0,
+      (ledgerRows || []).reduce((sum, r) => sum + Number(r.points || 0), 0)
+    );
+    const tierInfo = computeLoyaltyTier(points);
+    return sendSuccess(res, {
+      enabled: isEnabled,
+      points,
+      tier: tierInfo.tier,
+      discount_percent: tierInfo.discountPercent,
+      next_tier_name: tierInfo.nextTierName,
+      next_tier_points: tierInfo.nextTierPoints,
+      progress_percent: tierInfo.progressPercent,
+      tiers: [
+        { name: "Bronze", min_points: 0, discount_percent: 0, perks: "Earn 10 points per \xA31 spent" },
+        { name: "Silver", min_points: 500, discount_percent: 5, perks: "5% loyalty rewards & priority support" },
+        { name: "Gold", min_points: 1e3, discount_percent: 10, perks: "10% loyalty rewards + priority slot allocation" },
+        { name: "Platinum", min_points: 2500, discount_percent: 15, perks: "15% VIP rewards + dedicated cleaner matching" }
+      ]
+    });
+  } catch (err) {
+    console.error("[loyalty GET] error:", err);
+    return sendError(res, "Failed to fetch loyalty status", 500);
+  }
+}
+
 // server/_handlers/dashboard.ts
 function isPastDate(date) {
-  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const today = getUkNowParts().dateStr;
   return date < today;
 }
 function isActiveUpcoming(status, date) {
@@ -22708,12 +23075,13 @@ async function handleDashboard(req, res) {
     return sendError(res, authError || "Unauthorized", 401);
   }
   try {
-    const [profileRes, bookingsRes, servicesRes, notifsRes, settingsRes] = await Promise.all([
+    const [profileRes, bookingsRes, servicesRes, notifsRes, settingsRes, loyaltyRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase.from("bookings").select("*").eq("user_id", user.id).order("date", { ascending: false }),
       supabase.from("services").select("*").eq("active", true).order("price", { ascending: true }),
       supabase.from("notifications").select("id, title, message, read, created_at").eq("user_id", user.id).eq("read", false),
-      supabase.from("settings").select("value").eq("key", "loyalty_enabled").maybeSingle()
+      supabase.from("settings").select("value").eq("key", "loyalty_enabled").maybeSingle(),
+      supabase.from("loyalty_points").select("points").eq("user_id", user.id)
     ]);
     const loyaltyEnabled = settingsRes?.data?.value === "true";
     const bookings = bookingsRes?.data || [];
@@ -22749,40 +23117,31 @@ async function handleDashboard(req, res) {
       active: Boolean(s.active),
       image_url: resolveServiceImageUrl(s.id, s.image_url)
     }));
-    const profile2 = profileRes.data || {
+    const profile = profileRes.data || {
       id: user.id,
-      email: user.email,
       full_name: user.email?.split("@")[0] || "Customer",
-      loyalty_points: 0
+      phone: null,
+      address: null,
+      city: null,
+      postcode: null,
+      created_at: null
     };
-    const points = Number(profile2.loyalty_points || 0);
-    let tier = "Bronze";
-    let discountPercent = 0;
-    let nextTierPoints = 100;
-    if (points >= 500) {
-      tier = "Platinum";
-      discountPercent = 20;
-      nextTierPoints = 500;
-    } else if (points >= 250) {
-      tier = "Gold";
-      discountPercent = 15;
-      nextTierPoints = 500;
-    } else if (points >= 100) {
-      tier = "Silver";
-      discountPercent = 10;
-      nextTierPoints = 250;
-    }
+    const points = Math.max(
+      0,
+      (loyaltyRes.data || []).reduce((sum, row) => sum + Number(row.points || 0), 0)
+    );
+    const tierInfo = computeLoyaltyTier(points);
     return sendSuccess(res, {
       profile: {
-        id: profile2.id,
-        full_name: profile2.full_name,
-        email: profile2.email || user.email,
-        phone: profile2.phone,
-        address: profile2.address,
-        city: profile2.city,
-        postcode: profile2.postcode,
+        id: profile.id,
+        full_name: profile.full_name,
+        email: user.email,
+        phone: profile.phone,
+        address: profile.address,
+        city: profile.city,
+        postcode: profile.postcode,
         loyalty_points: points,
-        created_at: profile2.created_at
+        created_at: profile.created_at
       },
       counts,
       recent_bookings: recentBookings,
@@ -22790,15 +23149,16 @@ async function handleDashboard(req, res) {
       loyalty: {
         enabled: loyaltyEnabled,
         points,
-        tier,
-        discount_percent: discountPercent,
-        next_tier_points: nextTierPoints
+        tier: tierInfo.tier,
+        discount_percent: tierInfo.discountPercent,
+        next_tier_points: tierInfo.nextTierPoints
       },
       loyalty_enabled: loyaltyEnabled,
       unread_notifications_count: notifsRes.data ? notifsRes.data.length : 0
     });
   } catch (err) {
-    return sendError(res, err?.message || "Failed to fetch dashboard data", 500);
+    console.error("[dashboard] error:", err);
+    return sendError(res, "Failed to fetch dashboard data", 500);
   }
 }
 
@@ -22830,6 +23190,29 @@ function parseRoomCount(value, maximum) {
   const count = Number(value);
   return Number.isInteger(count) && count >= 0 && count <= maximum ? count : null;
 }
+function isValidIsoDate(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const parsed = Date.parse(`${dateStr}T00:00:00.000Z`);
+  if (Number.isNaN(parsed)) return false;
+  return new Date(parsed).toISOString().slice(0, 10) === dateStr;
+}
+function calculateNextRecurringDate(currentDateStr, frequency) {
+  const [y, m, d] = currentDateStr.split("-").map(Number);
+  if (frequency === "weekly") {
+    const next2 = new Date(Date.UTC(y, m - 1, d + 7));
+    return next2.toISOString().slice(0, 10);
+  }
+  if (frequency === "fortnightly" || frequency === "biweekly") {
+    const next2 = new Date(Date.UTC(y, m - 1, d + 14));
+    return next2.toISOString().slice(0, 10);
+  }
+  const targetYear = m === 12 ? y + 1 : y;
+  const targetMonth = m === 12 ? 1 : m + 1;
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const clampedDay = Math.min(d, lastDayOfTargetMonth);
+  const next = new Date(Date.UTC(targetYear, targetMonth - 1, clampedDay));
+  return next.toISOString().slice(0, 10);
+}
 async function handleBookings(req, res, subPath, params = {}) {
   const method = (req.method || "GET").toUpperCase();
   const auth = await verifyAuth(req);
@@ -22837,7 +23220,7 @@ async function handleBookings(req, res, subPath, params = {}) {
     return sendError(res, "Authentication required", 401);
   }
   const { supabase, user } = auth;
-  if (!supabase || !user) return sendError(res, "Authentication required", 401);
+  const admin = getAdminSupabase();
   const segments = subPath.split("/").filter(Boolean);
   if (segments.length === 0) {
     if (method === "GET") {
@@ -22856,7 +23239,10 @@ async function handleBookings(req, res, subPath, params = {}) {
         (b) => b.status === "upcoming" && b.payment_status !== "paid" && isBookingStartTimePassed(b.date, b.time_slot)
       ).map((b) => b.id);
       if (expiredUnpaidIds.length > 0) {
-        void supabase.from("bookings").update({ status: "cancelled" }).in("id", expiredUnpaidIds);
+        const { error: expireErr } = await admin.from("bookings").update({ status: "cancelled" }).in("id", expiredUnpaidIds).eq("user_id", user.id);
+        if (expireErr) {
+          console.error("[bookings GET] expire unpaid error:", expireErr);
+        }
       }
       const items = (data || []).map((b) => ({
         ...b,
@@ -22866,14 +23252,38 @@ async function handleBookings(req, res, subPath, params = {}) {
       return sendSuccess(res, items);
     }
     if (method === "POST") {
-      const { data: bookingEnabledSetting } = await supabase.from("settings").select("value").eq("key", "booking_enabled").maybeSingle();
-      if (bookingEnabledSetting?.value === "false") {
-        const { data: bookingMessageSetting } = await supabase.from("settings").select("value").eq("key", "booking_disabled_message").maybeSingle();
-        const disabledMsg = bookingMessageSetting?.value?.trim() || "We are currently fully booked and temporarily not accepting new bookings. Please try again later.";
+      const bookingSettingKeys = [
+        "booking_enabled",
+        "booking_disabled_message",
+        "booking_availability_schedule",
+        "booking_extras",
+        "room_calc_base_hours",
+        "room_calc_bed_hours",
+        "room_calc_bath_hours",
+        "room_calc_living_hours",
+        "discount_weekly",
+        "discount_fortnightly",
+        "discount_biweekly",
+        "discount_monthly",
+        "max_bookings_per_slot"
+      ];
+      const { data: settingsData, error: settingsError } = await admin.from("settings").select("key, value").in("key", bookingSettingKeys);
+      if (settingsError) {
+        return sendError(
+          res,
+          "Unable to verify the cleaning estimate. Please try again.",
+          503
+        );
+      }
+      const settingsMap = {};
+      for (const setting of settingsData || []) {
+        settingsMap[setting.key] = setting.value;
+      }
+      if (settingsMap["booking_enabled"] === "false") {
+        const disabledMsg = settingsMap["booking_disabled_message"]?.trim() || "We are currently fully booked and temporarily not accepting new bookings. Please try again later.";
         return sendError(res, disabledMsg, 403);
       }
-      const { data: scheduleSetting } = await supabase.from("settings").select("value").eq("key", "booking_availability_schedule").maybeSingle();
-      const weeklySchedule = parseWeeklyAvailability(scheduleSetting?.value);
+      const weeklySchedule = parseWeeklyAvailability(settingsMap["booking_availability_schedule"]);
       const body = req.body || {};
       const {
         serviceId,
@@ -22899,7 +23309,7 @@ async function handleBookings(req, res, subPath, params = {}) {
       if (!serviceId || !date || !address || !postcode) {
         return sendError(res, "Missing required booking fields (serviceId, date, address, postcode).", 400);
       }
-      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00.000Z`)) || (/* @__PURE__ */ new Date(`${date}T00:00:00.000Z`)).toISOString().slice(0, 10) !== date) {
+      if (typeof date !== "string" || !isValidIsoDate(date)) {
         return sendError(res, "A valid booking date is required.", 400);
       }
       if (typeof address !== "string" || !address.trim() || address.trim().length > 500 || typeof postcode !== "string" || !postcode.trim() || postcode.trim().length > 24 || city != null && (typeof city !== "string" || city.trim().length > 160) || notes != null && (typeof notes !== "string" || notes.length > 2e3)) {
@@ -22908,16 +23318,19 @@ async function handleBookings(req, res, subPath, params = {}) {
       if (recurringFreq && !["none", "one_off", "weekly", "biweekly", "fortnightly", "monthly"].includes(recurringFreq)) {
         return sendError(res, "Invalid recurring booking frequency.", 400);
       }
-      const parsedBedrooms = parseRoomCount(bedrooms, MAX_ROOM_COUNTS.bedrooms);
-      const parsedBathrooms = parseRoomCount(bathrooms, MAX_ROOM_COUNTS.bathrooms);
-      const parsedLivingRooms = parseRoomCount(
-        livingRooms,
-        MAX_ROOM_COUNTS.livingAreas
-      );
+      const { data: service, error: svcErr } = await admin.from("services").select("id, name, price, discount_percent, active").eq("id", serviceId).eq("active", true).single();
+      if (svcErr || !service) {
+        return sendError(res, "Selected service is unavailable.", 400);
+      }
+      const serviceKey = service.id || service.name;
+      const fieldLimits = getServiceFieldLimits(serviceKey);
+      const parsedBedrooms = parseRoomCount(bedrooms, fieldLimits.field1Max);
+      const parsedBathrooms = parseRoomCount(bathrooms, fieldLimits.field2Max);
+      const parsedLivingRooms = parseRoomCount(livingRooms, fieldLimits.field3Max);
       if (parsedBedrooms == null || parsedBathrooms == null || parsedLivingRooms == null) {
         return sendError(
           res,
-          "Room counts must be whole numbers within the allowed range, including zero when a room type is absent.",
+          "Property/load counts must be whole numbers within the allowed range for this service.",
           400
         );
       }
@@ -22934,32 +23347,6 @@ async function handleBookings(req, res, subPath, params = {}) {
       if (selectedExtraIds.some((extraId) => !extraId)) {
         return sendError(res, "Selected extras are invalid.", 400);
       }
-      const { data: service, error: svcErr } = await supabase.from("services").select("id, name, price, discount_percent, active").eq("id", serviceId).eq("active", true).single();
-      if (svcErr || !service) {
-        return sendError(res, "Selected service is unavailable.", 400);
-      }
-      const bookingSettingKeys = [
-        "booking_extras",
-        "room_calc_base_hours",
-        "room_calc_bed_hours",
-        "room_calc_bath_hours",
-        "room_calc_living_hours",
-        "discount_weekly",
-        "discount_biweekly",
-        "discount_monthly"
-      ];
-      const { data: settingsData, error: settingsError } = await supabase.from("settings").select("key, value").in("key", bookingSettingKeys);
-      if (settingsError) {
-        return sendError(
-          res,
-          "Unable to verify the cleaning estimate. Please try again.",
-          503
-        );
-      }
-      const settingsMap = {};
-      for (const setting of settingsData || []) {
-        settingsMap[setting.key] = setting.value;
-      }
       const estimateMultipliers = parseDurationMultipliers(settingsMap);
       const configuredExtras = parseBookingExtras(settingsMap["booking_extras"]);
       if (!estimateMultipliers || !configuredExtras) {
@@ -22969,14 +23356,16 @@ async function handleBookings(req, res, subPath, params = {}) {
           503
         );
       }
-      const configuredExtraIds = new Set(configuredExtras.map((extra) => extra.id));
+      const allowedExtrasForService = getAllowedExtrasForService(serviceKey, configuredExtras);
+      const allowedExtraIds = new Set(allowedExtrasForService.map((extra) => extra.id));
       const unknownExtra = selectedExtraIds.find(
-        (extraId) => !configuredExtraIds.has(extraId)
+        (extraId) => !allowedExtraIds.has(extraId)
       );
       if (unknownExtra) {
         return sendError(res, "One or more selected extras are unavailable.", 400);
       }
-      const minimumDurationHours = calculateRecommendedHours(
+      const minimumDurationHours = calculateRecommendedHoursForService(
+        serviceKey,
         parsedBedrooms,
         parsedBathrooms,
         parsedLivingRooms,
@@ -23002,11 +23391,11 @@ async function handleBookings(req, res, subPath, params = {}) {
       if (!dayConfig || !dayConfig.enabled) {
         return sendError(
           res,
-          `We are not accepting bookings on this day. Please select an available day.`,
+          "We are not accepting bookings on this day. Please select an available day.",
           400
         );
       }
-      const bookingStartHour = startHour || (timeSlot ? timeSlot.split(/[-–]/)[0]?.trim() : "09:00");
+      const bookingStartHour = typeof startHour === "string" && startHour.trim() || typeof timeSlot === "string" && timeSlot.split(/[-–]/)[0]?.trim() || "09:00";
       if (dayConfig.slots && dayConfig.slots.length > 0 && !dayConfig.slots.includes(bookingStartHour)) {
         return sendError(
           res,
@@ -23028,6 +23417,9 @@ async function handleBookings(req, res, subPath, params = {}) {
         timeSlot = "09:00 - 11:00";
         durationHours = 2;
       }
+      if (isBookingStartTimePassed(date, timeSlot)) {
+        return sendError(res, "Cannot book a date and start time in the past.", 400);
+      }
       if (durationHours < MIN_DURATION_HOURS || durationHours > MAX_DURATION_HOURS) {
         return sendError(
           res,
@@ -23044,21 +23436,80 @@ async function handleBookings(req, res, subPath, params = {}) {
           { minimumDurationHours, allowedFloorHours }
         );
       }
-      const baseHourlyRate = Number(service.price) || 20;
-      const basePrice = baseHourlyRate * durationHours;
-      let discountPercent = Number(service.discount_percent) || 0;
-      let recurringDiscountPercent = 0;
-      if (recurringFreq && recurringFreq !== "none" && recurringFreq !== "one_off") {
-        if (recurringFreq === "weekly") recurringDiscountPercent = Number(settingsMap["discount_weekly"]) || 15;
-        else if (recurringFreq === "biweekly" || recurringFreq === "fortnightly") recurringDiscountPercent = Number(settingsMap["discount_biweekly"]) || 10;
-        else if (recurringFreq === "monthly") recurringDiscountPercent = Number(settingsMap["discount_monthly"]) || 5;
+      const maxPerSlotRaw = Number(settingsMap["max_bookings_per_slot"]);
+      const maxPerSlot = Number.isFinite(maxPerSlotRaw) && maxPerSlotRaw > 0 ? maxPerSlotRaw : 10;
+      const { count: slotBookingCount, error: capErr } = await admin.from("bookings").select("id", { count: "exact", head: true }).eq("date", date).neq("status", "cancelled").like("time_slot", `${bookingStartHour}%`);
+      if (!capErr && typeof slotBookingCount === "number" && slotBookingCount >= maxPerSlot) {
+        return sendError(
+          res,
+          `Sorry, the ${bookingStartHour} slot on ${date} is now fully booked. Please select another time or date.`,
+          409
+        );
       }
-      const totalDiscountPercent = Math.min(50, discountPercent + recurringDiscountPercent);
-      const finalPrice = Math.round(basePrice * (1 - totalDiscountPercent / 100) * 100) / 100;
-      const invoiceNumber = generateInvoiceNumber();
+      const baseHourlyRate = Number(service.price) || 20;
+      const serviceDiscountPercent = Number(service.discount_percent) || 0;
+      let recurringDiscountPercent = 0;
+      let normalizedFreq = null;
+      if (recurringFreq && recurringFreq !== "none" && recurringFreq !== "one_off") {
+        normalizedFreq = recurringFreq === "biweekly" ? "fortnightly" : recurringFreq;
+        if (normalizedFreq === "weekly") {
+          recurringDiscountPercent = Number(settingsMap["discount_weekly"] ?? 15);
+        } else if (normalizedFreq === "fortnightly") {
+          recurringDiscountPercent = Number(
+            settingsMap["discount_fortnightly"] ?? settingsMap["discount_biweekly"] ?? 10
+          );
+        } else if (normalizedFreq === "monthly") {
+          recurringDiscountPercent = Number(settingsMap["discount_monthly"] ?? 5);
+        }
+      }
+      const pricing = calculateBookingPrice({
+        baseHourlyRate,
+        durationHours,
+        serviceDiscountPercent,
+        recurringDiscountPercent
+      });
+      const finalPrice = pricing.finalPrice;
+      const invoiceNumber = await generateInvoiceNumberAsync(admin);
+      let profile = null;
       try {
-        await supabase.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
+        await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id", ignoreDuplicates: true });
+        const { data: profData } = await admin.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle();
+        profile = profData;
       } catch (_) {
+      }
+      let createdPlanId = null;
+      if (normalizedFreq && ["weekly", "fortnightly", "monthly"].includes(normalizedFreq)) {
+        const nextBookingDate = calculateNextRecurringDate(date, normalizedFreq);
+        const { data: planRow, error: planErr } = await admin.from("recurring_plans").insert({
+          user_id: user.id,
+          service_type: service.id,
+          service_name: service.name,
+          frequency: normalizedFreq,
+          start_time: bookingStartHour,
+          duration_hours: durationHours,
+          address: address.trim(),
+          city: (city || "South Wales").trim(),
+          postcode: postcode.trim().toUpperCase(),
+          price_per_visit: finalPrice,
+          discount_percent: recurringDiscountPercent,
+          status: "active",
+          next_booking_date: nextBookingDate,
+          notes: notes && String(notes).trim() ? String(notes).trim() : null,
+          bedrooms: parsedBedrooms,
+          bathrooms: parsedBathrooms,
+          living_rooms: parsedLivingRooms,
+          extras: selectedExtraIds,
+          property_type: normalizedPropertyType,
+          access_method: accessMethod || "home",
+          supplies_option: suppliesOption || "cleaner",
+          parking_option: parkingOption || "free",
+          has_pets: Boolean(hasPets)
+        }).select("id").single();
+        if (planErr || !planRow) {
+          console.error("[Recurring Plan Insert Error]:", planErr);
+          return sendError(res, "Failed to set up recurring cleaning plan. Please try again.", 500);
+        }
+        createdPlanId = planRow.id;
       }
       const bookingInsert = {
         user_id: user.id,
@@ -23083,93 +23534,73 @@ async function handleBookings(req, res, subPath, params = {}) {
         access_method: accessMethod || "home",
         supplies_option: suppliesOption || "cleaner",
         parking_option: parkingOption || "free",
-        has_pets: Boolean(hasPets)
+        has_pets: Boolean(hasPets),
+        recurring_plan_id: createdPlanId,
+        recurring_freq: normalizedFreq || "none"
       };
-      const { data: booking, error: insertErr } = await supabase.from("bookings").insert(bookingInsert).select().single();
+      const { data: booking, error: insertErr } = await admin.from("bookings").insert(bookingInsert).select().single();
       if (insertErr || !booking) {
-        return sendError(res, insertErr?.message || "Failed to create booking", 500);
-      }
-      if (recurringFreq && recurringFreq !== "none" && recurringFreq !== "one_off") {
-        const normalizedFreq = recurringFreq === "biweekly" ? "fortnightly" : recurringFreq;
-        if (["weekly", "fortnightly", "monthly"].includes(normalizedFreq)) {
-          const { error: planErr } = await supabase.from("recurring_plans").insert({
-            user_id: user.id,
-            service_type: service.id,
-            service_name: service.name,
-            frequency: normalizedFreq,
-            start_time: startHour || timeSlot.split(" - ")[0] || "09:00",
-            duration_hours: durationHours,
-            address: address.trim(),
-            city: (city || "South Wales").trim(),
-            postcode: postcode.trim().toUpperCase(),
-            price_per_visit: finalPrice,
-            discount_percent: recurringDiscountPercent,
-            status: "active",
-            notes: notes ? String(notes).trim() : null,
-            bedrooms: parsedBedrooms,
-            bathrooms: parsedBathrooms,
-            living_rooms: parsedLivingRooms,
-            extras: selectedExtraIds,
-            property_type: normalizedPropertyType,
-            access_method: accessMethod || "home",
-            supplies_option: suppliesOption || "cleaner",
-            parking_option: parkingOption || "free",
-            has_pets: Boolean(hasPets)
-          });
-          if (planErr) {
-            console.error("[Recurring Plan Insert Warning]:", planErr);
-          }
+        if (createdPlanId) {
+          await admin.from("recurring_plans").delete().eq("id", createdPlanId);
         }
+        return sendError(res, insertErr?.message || "Failed to create booking", 500);
       }
       try {
         const botToken = getEnv("TELEGRAM_BOT_TOKEN");
         const chatId = getEnv("TELEGRAM_ADMIN_CHAT_ID") || getEnv("TELEGRAM_CHAT_ID");
+        const siteUrl = getEnv("SITE_URL", "https://makemeclean.co.uk").replace(/\/$/, "");
         if (botToken && chatId) {
           const customerName = (profile?.full_name || user.email?.split("@")[0] || "Customer").trim();
           const customerPhone = profile?.phone || "Not provided";
-          const extrasLabel = selectedExtraIds && selectedExtraIds.length > 0 ? selectedExtraIds.join(", ") : "None";
-          const recurringLabel = recurringFreq && recurringFreq !== "none" && recurringFreq !== "one_off" ? `${recurringFreq} (Active plan)` : "One-off";
-          const accessLabel = accessMethod === "home" ? "Customer at home" : accessMethod === "key_safe" ? "Key safe / Lockbox" : accessMethod === "concierge" ? "Concierge" : accessMethod === "hidden_key" ? "Hidden key" : accessMethod || "Customer at home";
+          const extrasLabel = selectedExtraIds.length > 0 ? selectedExtraIds.join(", ") : "None";
+          const recurringLabel = normalizedFreq ? `${normalizedFreq} (Active plan)` : "One-off";
+          const accessLabel = accessMethod === "home" ? "Customer at home" : accessMethod === "key_safe" ? "Key safe / Lockbox" : accessMethod === "concierge" ? "Concierge" : accessMethod === "hidden_key" ? "Hidden key" : String(accessMethod || "Customer at home");
           const suppliesLabel = suppliesOption === "customer" ? "Customer provides supplies" : "Cleaner brings eco supplies";
           const parkingLabel = parkingOption === "paid" ? "Paid parking meter nearby" : parkingOption === "none" ? "No parking (public transport only)" : "Free on-street/driveway";
           const petsLabel = hasPets ? "Yes \u{1F43E}" : "No";
+          const postcodeOutward = String(booking.postcode || "").trim().split(/\s+/)[0];
           const lines = [
             `\u{1F9F9} *New Booking Created*`,
             ``,
-            `*Service:* ${service.name}`,
-            `*Date:* ${date}`,
-            `*Time Slot:* ${timeSlot} (${durationHours}h)`,
-            `*Price:* \xA3${finalPrice.toFixed(2)}${totalDiscountPercent > 0 ? ` (${totalDiscountPercent}% discount applied)` : ""}`,
-            `*Recurring:* ${recurringLabel}`,
-            `*Invoice #:* \`${invoiceNumber}\``,
+            `*Service:* ${escapeTelegramMarkdown(service.name)}`,
+            `*Date:* ${escapeTelegramMarkdown(date)}`,
+            `*Time Slot:* ${escapeTelegramMarkdown(`${timeSlot} (${durationHours}h)`)}`,
+            `*Price:* \xA3${finalPrice.toFixed(2)}${pricing.effectiveDiscountPercent > 0 ? ` (${pricing.effectiveDiscountPercent}% off)` : ""}`,
+            `*Recurring:* ${escapeTelegramMarkdown(recurringLabel)}`,
+            `*Invoice #:* \`${String(invoiceNumber).replace(/`/g, "")}\``,
             ``,
-            `\u{1F464} *Customer Information:*`,
-            `*Name:* ${customerName}`,
-            `*Email:* ${user.email || "N/A"}`,
-            `*Phone:* ${customerPhone}`,
+            `\u{1F464} *Customer:*`,
+            `*Name:* ${escapeTelegramMarkdown(customerName)}`,
+            `*Email:* ${escapeTelegramMarkdown(user.email || "N/A")}`,
+            `*Phone:* ${escapeTelegramMarkdown(customerPhone)}`,
             ``,
-            `\u{1F4CD} *Property & Location:*`,
-            `*Type:* ${normalizedPropertyType}`,
+            `\u{1F4CD} *Property Summary:*`,
+            `*Type:* ${escapeTelegramMarkdown(normalizedPropertyType)}`,
             `*Layout:* ${parsedBedrooms} Bed \xB7 ${parsedBathrooms} Bath \xB7 ${parsedLivingRooms} Living`,
-            `*Address:* ${booking.address}`,
-            `*City:* ${booking.city}`,
-            `*Postcode:* ${booking.postcode}`,
+            `*Area:* ${escapeTelegramMarkdown(booking.city)}${postcodeOutward ? ` (${escapeTelegramMarkdown(postcodeOutward)})` : ""}`,
+            `*Access:* ${escapeTelegramMarkdown(accessLabel)}`,
+            `*Supplies:* ${escapeTelegramMarkdown(suppliesLabel)}`,
+            `*Parking:* ${escapeTelegramMarkdown(parkingLabel)}`,
+            `*Pets:* ${escapeTelegramMarkdown(petsLabel)}`,
+            `*Add-Ons:* ${escapeTelegramMarkdown(extrasLabel)}`,
+            notes && String(notes).trim() ? `_Special notes attached \u2014 view securely in Admin Portal_` : null,
             ``,
-            `\u2699\uFE0F *Access & Instructions:*`,
-            `*Access:* ${accessLabel}`,
-            `*Cleaning Supplies:* ${suppliesLabel}`,
-            `*Parking:* ${parkingLabel}`,
-            `*Pets:* ${petsLabel}`,
-            `*Add-Ons:* ${extrasLabel}`,
-            notes && String(notes).trim() ? `*Special Notes:* "${String(notes).trim()}"` : null,
-            ``,
-            `*Booking ID:* \`${booking.id}\``
+            `*Booking ID:* \`${String(booking.id).replace(/`/g, "")}\``,
+            `Admin Portal: ${siteUrl}/admin`
           ].filter(Boolean);
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4e3);
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: chatId, text: lines.join("\n"), parse_mode: "Markdown" })
-          });
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: lines.join("\n"),
+              parse_mode: "Markdown",
+              disable_web_page_preview: true
+            }),
+            signal: controller.signal
+          }).finally(() => clearTimeout(timer));
         }
       } catch (tgErr) {
         console.error("[Telegram notification error]:", tgErr);
@@ -23183,28 +23614,43 @@ async function handleBookings(req, res, subPath, params = {}) {
   }
   const action = segments[1] || "";
   if (action === "reschedule" || action === "photos") {
-    const { data: ownedBooking, error: ownedBookingError } = await supabase.from("bookings").select("id").eq("id", bookingId).eq("user_id", user.id).maybeSingle();
+    const { data: ownedBooking, error: ownedBookingError } = await supabase.from("bookings").select("id, status").eq("id", bookingId).eq("user_id", user.id).maybeSingle();
     if (ownedBookingError || !ownedBooking) {
       return sendError(res, "Booking not found", 404);
     }
   }
   if (action === "cancel") {
     if (method !== "POST") return sendError(res, "Method not allowed", 405);
-    const { data: booking, error: fetchErr } = await supabase.from("bookings").select("id, user_id, status, date, time_slot").eq("id", bookingId).single();
+    const { data: booking, error: fetchErr } = await supabase.from("bookings").select("id, user_id, status, payment_status, date, time_slot").eq("id", bookingId).single();
     if (fetchErr || !booking) return sendError(res, "Booking not found", 404);
     if (booking.user_id !== user.id) return sendError(res, "Unauthorized", 403);
-    if (booking.payment_status === "paid") return sendError(res, "Booking is already paid", 400);
-    if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
-      void supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
+    if (booking.status === "cancelled") return sendError(res, "Booking is already cancelled", 400);
+    if (booking.status === "completed") return sendError(res, "Completed bookings cannot be cancelled", 400);
+    if (booking.payment_status === "paid") {
       return sendError(
         res,
-        "This appointment scheduled start time has already passed. Please reschedule or place a new booking.",
+        "Paid bookings cannot be cancelled directly. Please submit a refund request so our team can process your refund according to our cancellation policy.",
+        400
+      );
+    }
+    if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
+      await admin.from("bookings").update({ status: "cancelled" }).eq("id", booking.id).eq("user_id", user.id);
+      return sendError(
+        res,
+        "This appointment scheduled start time has already passed. Please place a new booking.",
         400,
         { expired: true, requiresReschedule: true }
       );
     }
-    if (booking.status === "cancelled") return sendError(res, "Booking is already cancelled", 400);
-    const { error: updateErr } = await supabase.from("bookings").update({ status: "cancelled" }).eq("id", bookingId);
+    const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
+    if (hoursUntil !== null && hoursUntil <= 3) {
+      return sendError(
+        res,
+        "Cancellations are not permitted within 3 hours of the scheduled start time. Please contact our support team.",
+        400
+      );
+    }
+    const { error: updateErr } = await admin.from("bookings").update({ status: "cancelled" }).eq("id", bookingId).eq("user_id", user.id);
     if (updateErr) return sendError(res, updateErr.message, 500);
     return sendSuccess(res, { message: "Booking cancelled successfully" });
   }
@@ -23214,8 +23660,14 @@ async function handleBookings(req, res, subPath, params = {}) {
     if (fetchErr || !booking) return sendError(res, "Booking not found", 404);
     if (booking.user_id !== user.id) return sendError(res, "Unauthorized", 403);
     if (booking.payment_status === "paid") return sendError(res, "Booking is already paid", 400);
+    if (["refunded", "disputed"].includes(booking.payment_status)) {
+      return sendError(res, `Booking payment status is ${booking.payment_status} and cannot be paid again.`, 400);
+    }
+    if (["cancelled", "completed"].includes(booking.status)) {
+      return sendError(res, `Cannot pay for a ${booking.status} booking.`, 400);
+    }
     if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
-      void supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
+      await admin.from("bookings").update({ status: "cancelled" }).eq("id", booking.id).eq("user_id", user.id);
       return sendError(
         res,
         "This appointment scheduled start time has already passed. Please reschedule or place a new booking.",
@@ -23223,45 +23675,95 @@ async function handleBookings(req, res, subPath, params = {}) {
         { expired: true, requiresReschedule: true }
       );
     }
-    const siteUrl = getEnv("SITE_URL", "https://makemeclean.co.uk");
-    const successUrl = `${siteUrl}/booking-detail/${booking.id}?payment=success`;
-    const cancelUrl = `${siteUrl}/booking-detail/${booking.id}?payment=cancelled`;
+    const siteUrl = getEnv("SITE_URL", "https://makemeclean.co.uk").replace(/\/$/, "");
+    const successUrl = `${siteUrl}/pay/${booking.id}?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${siteUrl}/bookings/${booking.id}`;
     const stripeSecretKey = getEnv("STRIPE_SECRET_KEY");
     if (!stripeSecretKey) {
-      return sendSuccess(res, {
-        checkoutUrl: `${siteUrl}/payment/${booking.id}`,
-        mode: "fallback_web"
-      });
+      return sendError(res, "Payment gateway is temporarily unavailable. Please try again later.", 503);
     }
+    const amountPence = Math.round(Number(booking.price) * 100);
+    if (!Number.isFinite(amountPence) || amountPence < 50) {
+      return sendError(res, "Invalid booking amount for checkout.", 400);
+    }
+    const isRecurring = Boolean(
+      booking.recurring_plan_id || booking.recurring_freq && !["none", "one_off"].includes(booking.recurring_freq)
+    );
     try {
+      let stripeCustomerId;
+      if (user.email) {
+        const { data: profileRow } = await admin.from("profiles").select("stripe_customer_id, full_name").eq("id", user.id).maybeSingle();
+        if (profileRow?.stripe_customer_id) {
+          stripeCustomerId = profileRow.stripe_customer_id;
+        } else {
+          const custParams = new URLSearchParams({
+            email: user.email,
+            "metadata[supabase_user_id]": user.id
+          });
+          if (profileRow?.full_name) custParams.set("name", profileRow.full_name);
+          const custRes = await fetch("https://api.stripe.com/v1/customers", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${stripeSecretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Idempotency-Key": `stripe-customer-${user.id}`
+            },
+            body: custParams.toString()
+          });
+          const custJson = await custRes.json().catch(() => null);
+          if (custRes.ok && custJson?.id) {
+            stripeCustomerId = custJson.id;
+            await admin.from("profiles").update({ stripe_customer_id: custJson.id }).eq("id", user.id);
+          }
+        }
+      }
+      const checkoutParams = new URLSearchParams({
+        mode: "payment",
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        client_reference_id: booking.id,
+        "metadata[booking_id]": booking.id,
+        "metadata[user_id]": user.id,
+        "metadata[invoice_number]": booking.invoice_number || booking.id,
+        "metadata[recurring_plan_id]": booking.recurring_plan_id || "",
+        "payment_intent_data[metadata][booking_id]": booking.id,
+        "payment_intent_data[metadata][user_id]": user.id,
+        "payment_intent_data[metadata][invoice_number]": booking.invoice_number || booking.id,
+        "payment_intent_data[metadata][recurring_plan_id]": booking.recurring_plan_id || "",
+        "line_items[0][price_data][currency]": "gbp",
+        "line_items[0][price_data][unit_amount]": String(amountPence),
+        "line_items[0][price_data][product_data][name]": `MakeMeClean - ${booking.service_name}`,
+        "line_items[0][price_data][product_data][description]": `Cleaning on ${booking.date} (${booking.time_slot})${isRecurring ? " (Recurring Plan)" : ""}`,
+        "line_items[0][quantity]": "1"
+      });
+      if (stripeCustomerId) {
+        checkoutParams.set("customer", stripeCustomerId);
+      } else if (user.email) {
+        checkoutParams.set("customer_email", user.email);
+      }
+      if (isRecurring) {
+        checkoutParams.set("payment_intent_data[setup_future_usage]", "off_session");
+      }
+      const minuteBucket = Math.floor(Date.now() / 6e4);
+      const idempotencyKey = `checkout-${booking.id}-${amountPence}-${minuteBucket}`;
       const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${stripeSecretKey}`,
-          "Content-Type": "application/x-www-form-urlencoded"
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": idempotencyKey
         },
-        body: new URLSearchParams({
-          mode: "payment",
-          success_url: successUrl,
-          cancel_url: cancelUrl,
-          customer_email: user.email || "",
-          "client_reference_id": booking.id,
-          "metadata[booking_id]": booking.id,
-          "metadata[user_id]": user.id,
-          "line_items[0][price_data][currency]": "gbp",
-          "line_items[0][price_data][unit_amount]": String(Math.round(booking.price * 100)),
-          "line_items[0][price_data][product_data][name]": `MakeMeClean - ${booking.service_name}`,
-          "line_items[0][price_data][product_data][description]": `Cleaning on ${booking.date} (${booking.time_slot})`,
-          "line_items[0][quantity]": "1"
-        }).toString()
+        body: checkoutParams.toString()
       });
-      const session = await stripeRes.json();
-      if (!stripeRes.ok || !session.url) {
-        return sendSuccess(res, { checkoutUrl: `${siteUrl}/payment/${booking.id}` });
+      const session = await stripeRes.json().catch(() => null);
+      if (!stripeRes.ok || !session?.url) {
+        console.error("[bookings checkout] Stripe error:", session);
+        return sendError(res, "Unable to start Stripe checkout session. Please try again.", 502);
       }
       return sendSuccess(res, { checkoutUrl: session.url, sessionId: session.id });
-    } catch (_) {
-      return sendSuccess(res, { checkoutUrl: `${siteUrl}/payment/${booking.id}` });
+    } catch (err) {
+      console.error("[bookings checkout] network error:", err);
+      return sendError(res, "Unable to connect to payment provider. Please try again.", 502);
     }
   }
   if (action === "reschedule") {
@@ -23275,12 +23777,40 @@ async function handleBookings(req, res, subPath, params = {}) {
       if (!requestedDate || !requestedTime) {
         return sendError(res, "Requested date and time are required", 400);
       }
-      const { data, error } = await supabase.from("reschedule_requests").insert({
+      if (typeof requestedDate !== "string" || !isValidIsoDate(requestedDate)) {
+        return sendError(res, "Requested date must be a valid YYYY-MM-DD date.", 400);
+      }
+      const cleanTime = String(requestedTime).trim();
+      const startPart = cleanTime.split(/[-–]/)[0]?.trim() || "";
+      if (!START_HOURS.includes(startPart)) {
+        return sendError(res, "Requested start time is not a valid booking slot.", 400);
+      }
+      if (isBookingStartTimePassed(requestedDate, cleanTime)) {
+        return sendError(res, "Requested reschedule date/time cannot be in the past.", 400);
+      }
+      const { data: booking } = await supabase.from("bookings").select("id, status").eq("id", bookingId).eq("user_id", user.id).single();
+      if (!booking || ["cancelled", "completed"].includes(booking.status)) {
+        return sendError(res, "Only active upcoming bookings can be rescheduled.", 400);
+      }
+      const { data: scheduleSetting } = await admin.from("settings").select("value").eq("key", "booking_availability_schedule").maybeSingle();
+      const weeklySchedule = parseWeeklyAvailability(scheduleSetting?.value);
+      const dayConfig = weeklySchedule[getDayKeyFromDateStr(requestedDate)];
+      if (!dayConfig || !dayConfig.enabled) {
+        return sendError(res, "We are not accepting bookings on the requested day.", 400);
+      }
+      if (dayConfig.slots && dayConfig.slots.length > 0 && !dayConfig.slots.includes(startPart)) {
+        return sendError(res, `The ${startPart} time slot is not available on that day.`, 400);
+      }
+      const { data: existingPending } = await admin.from("reschedule_requests").select("id").eq("booking_id", bookingId).eq("status", "pending").maybeSingle();
+      if (existingPending) {
+        return sendError(res, "A reschedule request is already pending review for this booking.", 409);
+      }
+      const { data, error } = await admin.from("reschedule_requests").insert({
         booking_id: bookingId,
         user_id: user.id,
         requested_date: requestedDate,
-        requested_time: requestedTime,
-        reason: reason ? String(reason).trim() : null,
+        requested_time: cleanTime,
+        reason: reason ? String(reason).trim().slice(0, 1e3) : null,
         status: "pending"
       }).select().single();
       if (error) return sendError(res, error.message, 500);
@@ -23292,33 +23822,52 @@ async function handleBookings(req, res, subPath, params = {}) {
     const { data: booking, error } = await supabase.from("bookings").select("*").eq("id", bookingId).single();
     if (error || !booking) return sendError(res, "Booking not found", 404);
     if (booking.user_id !== user.id) return sendError(res, "Unauthorized", 403);
-    let currentStatus = booking.status;
     if (booking.status === "upcoming" && booking.payment_status !== "paid" && isBookingStartTimePassed(booking.date, booking.time_slot)) {
-      currentStatus = "cancelled";
-      void supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
+      await admin.from("bookings").update({ status: "cancelled" }).eq("id", booking.id).eq("user_id", user.id);
     }
-    const netAmount = Math.round(booking.price / 1.2 * 100) / 100;
-    const vatAmount = Math.round((booking.price - netAmount) * 100) / 100;
+    const [{ data: settingRows }, { data: profileRow }] = await Promise.all([
+      admin.from("settings").select("key, value").in("key", [
+        "vat_registered",
+        "vat_number",
+        "company_legal_name",
+        "company_reg_number",
+        "company_registered_address",
+        "business_phone",
+        "email_payment"
+      ]),
+      supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle()
+    ]);
+    const cfg = {};
+    for (const row of settingRows || []) cfg[row.key] = row.value;
+    const vatRegistered = cfg["vat_registered"] === "true";
+    const grossAmount = Number(booking.price);
+    const netAmount = vatRegistered ? Math.round(grossAmount / 1.2 * 100) / 100 : grossAmount;
+    const vatAmount = vatRegistered ? Math.round((grossAmount - netAmount) * 100) / 100 : 0;
     return sendSuccess(res, {
       invoiceNumber: booking.invoice_number || `INV-${booking.id.slice(0, 8).toUpperCase()}`,
       bookingId: booking.id,
       date: booking.date,
-      customerName: user.email?.split("@")[0] || "Valued Customer",
+      customerName: profileRow?.full_name || user.email?.split("@")[0] || "Valued Customer",
       customerEmail: user.email,
       serviceName: booking.service_name,
       address: booking.address,
       city: booking.city,
       postcode: booking.postcode,
-      grossAmount: booking.price,
+      grossAmount,
       netAmount,
       vatAmount,
+      vatRegistered,
+      vatRate: vatRegistered ? 20 : 0,
       currency: "GBP",
       paymentStatus: booking.payment_status,
       company: {
-        name: "MakeMeClean Ltd",
+        name: cfg["company_legal_name"] || "MakeMeClean Ltd",
+        registrationNumber: cfg["company_reg_number"] || null,
+        registeredAddress: cfg["company_registered_address"] || "Wales, United Kingdom",
+        vatNumber: vatRegistered ? cfg["vat_number"] || null : null,
         country: "United Kingdom",
-        email: "support@makemeclean.co.uk",
-        phone: "+44 7700 900077"
+        email: cfg["email_payment"] || "payment@makemeclean.co.uk",
+        phone: cfg["business_phone"] || "+44 7362 068202"
       }
     });
   }
@@ -23326,27 +23875,55 @@ async function handleBookings(req, res, subPath, params = {}) {
     if (method === "GET") {
       const { data, error } = await supabase.from("booking_photos").select("*").eq("booking_id", bookingId).order("uploaded_at", { ascending: false });
       if (error) return sendError(res, error.message, 500);
-      return sendSuccess(res, data || []);
+      const photosWithSignedUrls = await Promise.all(
+        (data || []).map(async (photo) => {
+          let signedUrl = photo.photo_url || null;
+          if (photo.storage_path) {
+            const { data: signed } = await admin.storage.from("booking-photos").createSignedUrl(photo.storage_path, 3600);
+            if (signed?.signedUrl) signedUrl = signed.signedUrl;
+          }
+          return {
+            ...photo,
+            photo_url: signedUrl,
+            signed_url: signedUrl
+          };
+        })
+      );
+      return sendSuccess(res, photosWithSignedUrls);
     }
     if (method === "POST") {
-      const { storagePath, photoType = "after" } = req.body || {};
-      if (!storagePath) return sendError(res, "storagePath is required", 400);
-      const { data, error } = await supabase.from("booking_photos").insert({
+      const { storagePath, photoUrl, photoType = "after" } = req.body || {};
+      const cleanPath = typeof storagePath === "string" ? storagePath.trim() : "";
+      const cleanUrl = typeof photoUrl === "string" ? photoUrl.trim() : "";
+      if (!cleanPath && !cleanUrl) {
+        return sendError(res, "storagePath is required", 400);
+      }
+      if (cleanPath && (cleanPath.includes("..") || cleanPath.startsWith("/"))) {
+        return sendError(res, "Invalid storagePath", 400);
+      }
+      const allowedTypes = ["before", "after", "issue", "general"];
+      const cleanType = allowedTypes.includes(String(photoType)) ? String(photoType) : "after";
+      const { data, error } = await admin.from("booking_photos").insert({
         booking_id: bookingId,
         user_id: user.id,
-        storage_path: storagePath,
-        photo_type: photoType
+        storage_path: cleanPath || null,
+        photo_url: cleanUrl || null,
+        photo_type: cleanType
       }).select().single();
       if (error) return sendError(res, error.message, 500);
       return sendSuccess(res, data, 201);
     }
     if (method === "DELETE") {
-      const { photoId, storagePath } = req.body || {};
+      const photoId = typeof req.query?.photoId === "string" && req.query.photoId.trim() || typeof req.body?.photoId === "string" && req.body.photoId.trim() || "";
       if (!photoId) return sendError(res, "photoId is required", 400);
-      if (storagePath) {
-        await supabase.storage.from("booking-photos").remove([storagePath]);
+      const { data: photoRow, error: lookupErr } = await admin.from("booking_photos").select("id, storage_path").eq("id", photoId).eq("booking_id", bookingId).eq("user_id", user.id).maybeSingle();
+      if (lookupErr || !photoRow) {
+        return sendError(res, "Photo not found", 404);
       }
-      const { error } = await supabase.from("booking_photos").delete().eq("id", photoId).eq("user_id", user.id);
+      if (photoRow.storage_path) {
+        await admin.storage.from("booking-photos").remove([photoRow.storage_path]);
+      }
+      const { error } = await admin.from("booking_photos").delete().eq("id", photoRow.id).eq("user_id", user.id);
       if (error) return sendError(res, error.message, 500);
       return sendSuccess(res, { message: "Photo deleted" });
     }
@@ -23354,29 +23931,39 @@ async function handleBookings(req, res, subPath, params = {}) {
   if (action === "refund") {
     if (method !== "POST") return sendError(res, "Method not allowed", 405);
     const { reason, amount } = req.body || {};
-    if (!reason) return sendError(res, "Refund reason is required", 400);
-    const { data: booking, error: fetchErr } = await supabase.from("bookings").select("id, user_id, price, status").eq("id", bookingId).single();
+    const cleanReason = typeof reason === "string" ? reason.trim() : "";
+    if (!cleanReason) return sendError(res, "Refund reason is required", 400);
+    if (cleanReason.length > 2e3) return sendError(res, "Refund reason is too long.", 400);
+    const { data: booking, error: fetchErr } = await supabase.from("bookings").select("id, user_id, price, status, payment_status, refunded_amount").eq("id", bookingId).single();
     if (fetchErr || !booking) return sendError(res, "Booking not found", 404);
     if (booking.user_id !== user.id) return sendError(res, "Unauthorized", 403);
-    if (booking.payment_status === "paid") return sendError(res, "Booking is already paid", 400);
-    if (isBookingStartTimePassed(booking.date, booking.time_slot)) {
-      void supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
+    if (booking.payment_status !== "paid") {
+      return sendError(res, "Only paid bookings are eligible for a refund request.", 400);
+    }
+    const totalPrice = Number(booking.price);
+    const alreadyRefunded = Number(booking.refunded_amount || 0);
+    const remainingBalance = Math.round(Math.max(0, totalPrice - alreadyRefunded) * 100) / 100;
+    if (remainingBalance <= 0) {
+      return sendError(res, "This booking has already been fully refunded.", 400);
+    }
+    const refundAmount = amount === void 0 ? remainingBalance : Math.round(Number(amount) * 100) / 100;
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > remainingBalance) {
       return sendError(
         res,
-        "This appointment scheduled start time has already passed. Please reschedule or place a new booking.",
-        400,
-        { expired: true, requiresReschedule: true }
+        `Refund amount must be between \xA30.01 and \xA3${remainingBalance.toFixed(2)}.`,
+        400
       );
     }
-    const refundAmount = amount === void 0 ? Number(booking.price) : Number(amount);
-    if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > Number(booking.price)) {
-      return sendError(res, "Refund amount must be greater than zero and no more than the booking total.", 400);
+    const { data: existingPending } = await admin.from("refund_requests").select("id").eq("booking_id", bookingId).eq("status", "pending").maybeSingle();
+    if (existingPending) {
+      return sendError(res, "A refund request is already pending for this booking.", 409);
     }
-    const { data, error } = await supabase.from("refund_requests").insert({
+    const { data, error } = await admin.from("refund_requests").insert({
       booking_id: bookingId,
       user_id: user.id,
-      reason: String(reason).trim(),
-      amount: refundAmount,
+      reason: cleanReason,
+      refund_amount: refundAmount,
+      source: "user",
       status: "pending"
     }).select().single();
     if (error) return sendError(res, error.message, 500);
@@ -23389,21 +23976,29 @@ async function handleBookings(req, res, subPath, params = {}) {
     let currentStatus = booking.status;
     if (booking.status === "upcoming" && booking.payment_status !== "paid" && isBookingStartTimePassed(booking.date, booking.time_slot)) {
       currentStatus = "cancelled";
-      void supabase.from("bookings").update({ status: "cancelled" }).eq("id", booking.id);
+      await admin.from("bookings").update({ status: "cancelled" }).eq("id", booking.id).eq("user_id", user.id);
     }
     let cleaner = null;
-    if (booking.staff_id) {
-      const { data: staffData } = await supabase.from("staff").select("id, full_name, phone, rating, avatar_url").eq("id", booking.staff_id).maybeSingle();
-      cleaner = staffData;
+    const { data: assignment } = await admin.from("booking_assignments").select("staff_id, staff:staff_id(id, first_name, last_name, role)").eq("booking_id", bookingId).maybeSingle();
+    const assignedStaff = assignment?.staff;
+    if (assignedStaff) {
+      cleaner = {
+        id: assignedStaff.id,
+        full_name: `${assignedStaff.first_name || ""} ${assignedStaff.last_name || ""}`.trim() || "Assigned Cleaner",
+        role: assignedStaff.role || "Cleaner"
+      };
     }
-    const { data: reschedule } = await supabase.from("reschedule_requests").select("*").eq("booking_id", bookingId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const { data: refund } = await supabase.from("refund_requests").select("*").eq("booking_id", bookingId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const [{ data: reschedule }, { data: refund }] = await Promise.all([
+      supabase.from("reschedule_requests").select("*").eq("booking_id", bookingId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("refund_requests").select("*").eq("booking_id", bookingId).order("created_at", { ascending: false }).limit(1).maybeSingle()
+    ]);
     return sendSuccess(res, {
       ...booking,
       status: currentStatus,
       imageUrl: resolveServiceImageUrl(booking.service_type, null),
       cleaner,
       rescheduleRequest: reschedule || null,
+      active_reschedule: reschedule || null,
       refundRequest: refund || null
     });
   }
@@ -23418,7 +24013,6 @@ async function handlePlans(req, res, subPath, params = {}) {
     return sendError(res, "Authentication required", 401);
   }
   const { supabase, user } = auth;
-  if (!supabase || !user) return sendError(res, "Authentication required", 401);
   const segments = subPath.split("/").filter(Boolean);
   const planId = segments[0] || params.id;
   if (!planId) {
@@ -23434,99 +24028,50 @@ async function handlePlans(req, res, subPath, params = {}) {
     if (!["active", "paused", "cancelled"].includes(status)) {
       return sendError(res, "Invalid plan status (must be active, paused, or cancelled)", 400);
     }
-    const { data: plan, error: fetchErr } = await supabase.from("recurring_plans").select("id, user_id").eq("id", planId).single();
+    const { data: plan, error: fetchErr } = await supabase.from("recurring_plans").select("id, user_id, status").eq("id", planId).single();
     if (fetchErr || !plan) return sendError(res, "Plan not found", 404);
     if (plan.user_id !== user.id) return sendError(res, "Unauthorized", 403);
-    const { data: updated, error: updateErr } = await supabase.from("recurring_plans").update({ status }).eq("id", planId).select().single();
+    const admin = getAdminSupabase();
+    const updatePayload = { status };
+    if (status === "active") {
+      updatePayload.failure_count = 0;
+    }
+    const { data: updated, error: updateErr } = await admin.from("recurring_plans").update(updatePayload).eq("id", planId).eq("user_id", user.id).select().single();
     if (updateErr) return sendError(res, updateErr.message, 500);
     return sendSuccess(res, updated);
   }
   return sendError(res, "Method not allowed", 405);
 }
 
-// server/_handlers/loyalty.ts
-async function handleLoyalty(req, res) {
-  if (req.method !== "GET") {
-    return sendError(res, "Method not allowed", 405);
-  }
-  const { user, supabase, error: authError } = await verifyAuth(req);
-  if (authError || !user || !supabase) {
-    return sendError(res, authError || "Unauthorized", 401);
-  }
-  try {
-    const [{ data: profile2, error }, { data: settingRow }] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, loyalty_points, created_at").eq("id", user.id).single(),
-      supabase.from("settings").select("value").eq("key", "loyalty_enabled").maybeSingle()
-    ]);
-    const isEnabled = settingRow?.value === "true";
-    if (error && error.code !== "PGRST116") {
-      return sendError(res, error.message, 500);
-    }
-    const points = Number(profile2?.loyalty_points || 0);
-    let tier = "Bronze";
-    let discountPercent = 0;
-    let nextTierPoints = 100;
-    let nextTierName = "Silver";
-    let progressPercent = points / 100 * 100;
-    if (points >= 500) {
-      tier = "Platinum";
-      discountPercent = 20;
-      nextTierPoints = 500;
-      nextTierName = "Max Tier";
-      progressPercent = 100;
-    } else if (points >= 250) {
-      tier = "Gold";
-      discountPercent = 15;
-      nextTierPoints = 500;
-      nextTierName = "Platinum";
-      progressPercent = Math.min(100, Math.round((points - 250) / 250 * 100));
-    } else if (points >= 100) {
-      tier = "Silver";
-      discountPercent = 10;
-      nextTierPoints = 250;
-      nextTierName = "Gold";
-      progressPercent = Math.min(100, Math.round((points - 100) / 150 * 100));
-    }
-    return sendSuccess(res, {
-      enabled: isEnabled,
-      points,
-      tier,
-      discount_percent: discountPercent,
-      next_tier_name: nextTierName,
-      next_tier_points: nextTierPoints,
-      progress_percent: progressPercent,
-      tiers: [
-        { name: "Bronze", min_points: 0, discount_percent: 0, perks: "Standard loyalty account" },
-        { name: "Silver", min_points: 100, discount_percent: 10, perks: "10% off all cleaning bookings" },
-        { name: "Gold", min_points: 250, discount_percent: 15, perks: "15% off + priority slot allocation" },
-        { name: "Platinum", min_points: 500, discount_percent: 20, perks: "20% VIP discount + free add-on services" }
-      ]
-    });
-  } catch (err) {
-    return sendError(res, err?.message || "Failed to fetch loyalty status", 500);
-  }
-}
-
 // server/_handlers/contact.ts
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 async function handleContact(req, res) {
   if (req.method !== "POST") {
     return sendError(res, "Method not allowed", 405);
   }
   try {
+    const ip = getClientIp(req);
+    const allowed = await checkServerRateLimit(`contact:${ip}`, 5, 600);
+    if (!allowed) {
+      return sendError(res, "Too many contact submissions. Please wait a few minutes and try again.", 429);
+    }
     const body = req.body || {};
     const readString = (value) => typeof value === "string" ? value.trim() : "";
     const name = readString(body.name);
-    const email = readString(body.email);
+    const email = readString(body.email).toLowerCase();
     const phone = readString(body.phone);
     const subject = readString(body.subject) || "Website Inquiry";
     const message = readString(body.message);
     if (!name || !email || !message) {
       return sendError(res, "Please provide name, email, and message.", 400);
     }
+    if (!EMAIL_RE.test(email)) {
+      return sendError(res, "Please provide a valid email address.", 400);
+    }
     if (name.length > 160 || email.length > 254 || phone.length > 40 || subject.length > 160 || message.length > 5e3) {
       return sendError(res, "One or more contact fields exceed the allowed length.", 400);
     }
-    const supabase = getServerSupabase();
+    const supabase = getAdminSupabase();
     const { error } = await supabase.from("contact_messages").insert({
       name,
       email,
@@ -23536,42 +24081,51 @@ async function handleContact(req, res) {
       status: "new"
     });
     if (error) {
-      return sendError(res, error.message, 500);
+      console.error("[contact] insert error:", error);
+      return sendError(res, "Failed to submit contact message", 500);
     }
-    if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+    const botToken = getEnv("TELEGRAM_BOT_TOKEN");
+    const chatId = getEnv("TELEGRAM_ADMIN_CHAT_ID") || getEnv("TELEGRAM_CHAT_ID");
+    if (botToken && chatId) {
       try {
+        const preview = message.length > 600 ? `${message.slice(0, 600)}\u2026` : message;
         const text = `\u{1F4E9} *New Contact Message*
 
-\u2022 *From:* ${name} (${email})
-\u2022 *Phone:* ${phone || "N/A"}
-\u2022 *Subject:* ${subject}
+\u2022 *From:* ${escapeTelegramMarkdown(name)} (${escapeTelegramMarkdown(email)})
+\u2022 *Phone:* ${escapeTelegramMarkdown(phone || "N/A")}
+\u2022 *Subject:* ${escapeTelegramMarkdown(subject)}
 
-"${message}"`;
-        fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+"${escapeTelegramMarkdown(preview)}"`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4e3);
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
+            chat_id: chatId,
             text,
-            parse_mode: "Markdown"
-          })
-        }).catch(() => {
-        });
-      } catch (_) {
+            parse_mode: "Markdown",
+            disable_web_page_preview: true
+          }),
+          signal: controller.signal
+        }).finally(() => clearTimeout(timer));
+      } catch (tgErr) {
+        console.warn("[contact] Telegram alert failed:", tgErr);
       }
     }
     return sendSuccess(res, {
       message: "Thank you for reaching out. We have received your inquiry."
     }, 201);
   } catch (err) {
-    return sendError(res, err?.message || "Failed to submit contact message", 500);
+    console.error("[contact] unexpected error:", err);
+    return sendError(res, "Failed to submit contact message", 500);
   }
 }
 
 // server/_handlers/notifications.ts
 async function handleNotifications(req, res) {
   const { user, supabase, error: authError } = await verifyAuth(req);
-  if (authError || !user) {
+  if (authError || !user || !supabase) {
     return sendError(res, authError || "Unauthorized", 401);
   }
   if (req.method === "GET") {
@@ -23582,7 +24136,8 @@ async function handleNotifications(req, res) {
       }
       return sendSuccess(res, data || []);
     } catch (err) {
-      return sendError(res, err?.message || "Failed to fetch notifications", 500);
+      console.error("[notifications GET] error:", err);
+      return sendError(res, "Failed to fetch notifications", 500);
     }
   }
   if (req.method === "PATCH" || req.method === "POST") {
@@ -23590,39 +24145,150 @@ async function handleNotifications(req, res) {
       const body = req.body || {};
       const notifId = body.notificationId || body.id;
       if (notifId) {
-        await supabase.from("notifications").update({ read: true }).eq("id", notifId).eq("user_id", user.id);
+        const { error } = await supabase.from("notifications").update({ read: true }).eq("id", notifId).eq("user_id", user.id);
+        if (error) return sendError(res, error.message, 500);
       } else {
-        await supabase.from("notifications").update({ read: true }).eq("user_id", user.id).eq("read", false);
+        const { error } = await supabase.from("notifications").update({ read: true }).eq("user_id", user.id).eq("read", false);
+        if (error) return sendError(res, error.message, 500);
       }
       return sendSuccess(res, { success: true });
     } catch (err) {
-      return sendError(res, err?.message || "Failed to update notifications", 500);
+      console.error("[notifications PATCH] error:", err);
+      return sendError(res, "Failed to update notifications", 500);
     }
   }
   return sendError(res, "Method not allowed", 405);
 }
 
 // server/_handlers/staff.ts
-function randomPassword(length = 14) {
+import crypto3 from "node:crypto";
+function randomInitialSecret(length = 24) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
   let out = "";
   for (let i = 0; i < length; i++) {
-    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+    out += alphabet.charAt(crypto3.randomInt(0, alphabet.length));
   }
   return out;
 }
-async function handleStaff(req, res) {
-  if (req.method !== "POST") {
+function escapeHtml(value) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+async function sendStaffInviteEmail(args) {
+  const brevoKey = getEnv("BREVO_API_KEY");
+  if (!brevoKey) return false;
+  const isNew = Boolean(args.setupLink);
+  const actionBlock = isNew ? `<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#374151">
+         Click the secure button below to set your staff portal password and activate your account:
+       </p>
+       <p style="margin:18px 0 0">
+         <a href="${escapeHtml(args.setupLink)}" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 20px;border-radius:12px">
+           Set My Password &amp; Sign In
+         </a>
+       </p>
+       <p style="margin:14px 0 0;font-size:12px;line-height:1.6;color:#6b7280">
+         This secure one-time link expires shortly. If it expires, use "Forgot password" at ${escapeHtml(args.siteUrl)}/login.
+       </p>` : `<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#374151">
+         Your staff portal access is active. Sign in with your existing MakeMeClean account to view your shifts:
+       </p>
+       <p style="margin:18px 0 0">
+         <a href="${escapeHtml(args.siteUrl)}/staff" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 20px;border-radius:12px">
+           Open Staff Portal
+         </a>
+       </p>`;
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:20px;overflow:hidden">
+          <tr><td style="padding:22px;border-bottom:1px solid #eef2f7">
+            <div style="font-weight:900;font-size:22px;color:#111827">MakeMe<span style="color:#16a34a">Clean</span></div>
+            <div style="font-weight:600;font-size:12px;color:#6b7280;margin-top:4px">Staff Portal Invitation</div>
+          </td></tr>
+          <tr><td style="padding:22px">
+            <h2 style="margin:0 0 8px;font-weight:900;font-size:18px;color:#111827">Welcome, ${escapeHtml(args.firstName)}</h2>
+            ${actionBlock}
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5e3);
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": brevoKey,
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: "staffing@makemeclean.co.uk", name: "MakeMeClean Staffing" },
+        to: [{ email: args.toEmail }],
+        subject: "Your MakeMeClean Staff Portal Access",
+        htmlContent: html
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+    return res.ok;
+  } catch (err) {
+    console.error("[staff POST] Brevo invite error:", err);
+    return false;
+  }
+}
+async function handleStaff(req, res, subPath = "") {
+  const method = (req.method || "GET").toUpperCase();
+  if (method !== "POST" && method !== "DELETE") {
     return sendError(res, "Method not allowed", 405);
   }
   const { user, error: authErr } = await verifyAuth(req);
   if (authErr || !user) {
     return sendError(res, authErr || "Unauthorized", 401);
   }
-  const supabase = getServerSupabase();
+  const supabase = getAdminSupabase();
   const { data: adminRow } = await supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
   if (!adminRow) {
     return sendError(res, "Forbidden: Admin access required", 403);
+  }
+  if (method === "DELETE") {
+    const staffId = subPath.split("/").filter(Boolean)[0] || String(req.query?.id || "").trim();
+    if (!staffId) {
+      return sendError(res, "Staff ID is required", 400);
+    }
+    const { data: staffRow, error: fetchErr } = await supabase.from("staff").select("id, user_id, email").eq("id", staffId).maybeSingle();
+    if (fetchErr || !staffRow) {
+      return sendError(res, "Staff member not found", 404);
+    }
+    if (staffRow.user_id && staffRow.user_id === user.id) {
+      return sendError(res, "Cannot remove your own admin user account via staff offboarding.", 400);
+    }
+    const { error: deleteErr } = await supabase.from("staff").delete().eq("id", staffId);
+    if (deleteErr) {
+      return sendError(res, `Failed to delete staff record: ${deleteErr.message}`, 500);
+    }
+    let authRevoked = false;
+    if (staffRow.user_id) {
+      const { data: isAlsoAdmin } = await supabase.from("admins").select("user_id").eq("user_id", staffRow.user_id).maybeSingle();
+      if (!isAlsoAdmin) {
+        const { error: banErr } = await supabase.auth.admin.updateUserById(staffRow.user_id, {
+          ban_duration: "876000h"
+          // ~100 years
+        });
+        if (!banErr) {
+          authRevoked = true;
+        } else {
+          console.error("[staff DELETE] failed to ban auth user:", banErr);
+        }
+      }
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      success: true,
+      authRevoked,
+      message: authRevoked ? "Staff member removed and portal login access revoked." : "Staff member removed."
+    });
   }
   const body = req.body || {};
   const {
@@ -23643,7 +24309,7 @@ async function handleStaff(req, res) {
   const cleanCity = city ? String(city).trim() : null;
   const cleanPostcode = postcode ? String(postcode).trim() : null;
   const cleanRole = String(role || "Cleaner").trim();
-  if (!cleanFirstName || !cleanLastName || !cleanEmail) {
+  if (!cleanFirstName || !cleanLastName || !cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
     return sendError(res, "First name, last name, and a valid email are required", 400);
   }
   const { data: existingStaff } = await supabase.from("staff").select("id, email").eq("email", cleanEmail).maybeSingle();
@@ -23651,12 +24317,13 @@ async function handleStaff(req, res) {
     return sendError(res, `A staff member with email "${cleanEmail}" already exists`, 409);
   }
   let authUserId = null;
-  let tempPassword = "";
+  let setupLink;
+  let isNewAccount = false;
+  const siteUrl = getEnv("SITE_URL", "https://makemeclean.co.uk").replace(/\/$/, "");
   if (create_login) {
-    tempPassword = randomPassword();
     const { data: createdUser, error: createErr } = await supabase.auth.admin.createUser({
       email: cleanEmail,
-      password: tempPassword,
+      password: randomInitialSecret(),
       email_confirm: true,
       user_metadata: {
         must_change_password: true,
@@ -23669,16 +24336,23 @@ async function handleStaff(req, res) {
       if (!alreadyRegistered) {
         return sendError(res, `Failed to create staff account: ${createErr.message}`, 500);
       }
-      const { data: listData } = await supabase.auth.admin.listUsers();
-      const existingUser = (listData?.users || []).find(
-        (u) => u.email?.toLowerCase() === cleanEmail
-      );
-      if (existingUser) {
-        authUserId = existingUser.id;
-        tempPassword = "";
+      const { data: existingUserId } = await supabase.rpc("get_auth_user_id_by_email", {
+        p_email: cleanEmail
+      });
+      if (existingUserId) {
+        authUserId = String(existingUserId);
+        await supabase.auth.admin.updateUserById(authUserId, { ban_duration: "none" }).catch(() => {
+        });
       }
     } else if (createdUser?.user?.id) {
       authUserId = createdUser.user.id;
+      isNewAccount = true;
+      const { data: linkData } = await supabase.auth.admin.generateLink({
+        type: "recovery",
+        email: cleanEmail,
+        options: { redirectTo: `${siteUrl}/change-password` }
+      });
+      setupLink = linkData?.properties?.action_link;
     }
   }
   const { data: newStaff, error: insertErr } = await supabase.from("staff").insert({
@@ -23695,11 +24369,24 @@ async function handleStaff(req, res) {
   if (insertErr) {
     return sendError(res, `Failed to save staff record: ${insertErr.message}`, 500);
   }
-  return sendJson(res, {
+  let inviteSent = false;
+  if (create_login && authUserId) {
+    inviteSent = await sendStaffInviteEmail({
+      toEmail: cleanEmail,
+      firstName: cleanFirstName,
+      setupLink: isNewAccount ? setupLink : void 0,
+      siteUrl
+    });
+  }
+  return sendJson(res, 201, {
+    ok: true,
     success: true,
     staff: newStaff,
-    tempPassword: tempPassword || void 0,
-    message: tempPassword ? `Staff member created with temporary login password: ${tempPassword}` : "Staff member created successfully."
+    loginCreated: Boolean(create_login && authUserId),
+    inviteSent,
+    // Only expose one-time setup link to the admin UI if email delivery was unavailable
+    setupLink: isNewAccount && !inviteSent ? setupLink : void 0,
+    message: inviteSent ? `Staff member created and password setup invitation emailed to ${cleanEmail}.` : isNewAccount && setupLink ? "Staff member created. Email service unavailable \u2014 share the secure one-time setup link below." : "Staff member created successfully."
   });
 }
 
@@ -23724,6 +24411,22 @@ async function handler(req, res) {
     switch (route) {
       case "health":
         return res.status(200).json({ status: "ok", time: (/* @__PURE__ */ new Date()).toISOString() });
+      case "client-error": {
+        if (req.method !== "POST") return sendError(res, "Method not allowed", 405);
+        const ip = getClientIp(req);
+        const allowed = await checkServerRateLimit(`client_error:${ip}`, 10, 300);
+        if (!allowed) return sendError(res, "Too many error reports", 429);
+        const body = req.body || {};
+        console.error("[Client ErrorBoundary Report]", {
+          ip,
+          url: String(body.url || "").slice(0, 300),
+          message: String(body.message || "").slice(0, 500),
+          stack: String(body.stack || "").slice(0, 1500),
+          componentStack: String(body.componentStack || "").slice(0, 1500),
+          userAgent: String(req.headers["user-agent"] || "").slice(0, 200)
+        });
+        return sendSuccess(res, { received: true });
+      }
       case "config":
         return await handleConfig(req, res);
       case "services":
@@ -23747,13 +24450,13 @@ async function handler(req, res) {
       case "notifications":
         return await handleNotifications(req, res);
       case "staff":
-        return await handleStaff(req, res);
+        return await handleStaff(req, res, subPath);
       default:
         return sendError(res, `API route not found: /api/${path}`, 404);
     }
   } catch (err) {
     console.error(`[API Error] /api/${path}:`, err);
-    return sendError(res, err?.message || "Internal server error", 500);
+    return sendError(res, "Internal server error", 500);
   }
 }
 export {

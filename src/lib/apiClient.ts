@@ -159,22 +159,29 @@ export const api = {
         cancelled: bookings.filter(b => b.status === 'cancelled').length,
       };
 
-      const points = profileRes.data?.loyalty_points || 0;
+      const { data: ledgerRows } = await supabase
+        .from('loyalty_points')
+        .select('points')
+        .eq('user_id', user.id);
+      const points = Math.max(
+        0,
+        (ledgerRows || []).reduce((sum: number, row: any) => sum + Number(row.points || 0), 0)
+      );
       let tier = 'Bronze';
       let discount_percent = 0;
-      let next_tier_points = 100;
-      if (points >= 500) {
+      let next_tier_points = 500;
+      if (points >= 2500) {
         tier = 'Platinum';
         discount_percent = 15;
-        next_tier_points = 500;
-      } else if (points >= 250) {
+        next_tier_points = 2500;
+      } else if (points >= 1000) {
         tier = 'Gold';
         discount_percent = 10;
-        next_tier_points = 500;
-      } else if (points >= 100) {
+        next_tier_points = 2500;
+      } else if (points >= 500) {
         tier = 'Silver';
         discount_percent = 5;
-        next_tier_points = 250;
+        next_tier_points = 1000;
       }
 
       return {
@@ -323,9 +330,12 @@ export const api = {
 
   // ─── Photos ───────────────────────────────────────────────────────────────
   getBookingPhotos: (bookingId: string) =>
-    request<{ all: any[]; before: any[]; after: any[] }>(`/api/bookings/${bookingId}/photos`),
+    request<any[]>(`/api/bookings/${bookingId}/photos`),
 
-  addBookingPhoto: (bookingId: string, payload: { photoUrl: string; photoType: 'before' | 'after' }) =>
+  addBookingPhoto: (
+    bookingId: string,
+    payload: { storagePath?: string; photoUrl?: string; photoType?: 'before' | 'after' | 'issue' }
+  ) =>
     request<any>(`/api/bookings/${bookingId}/photos`, {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -334,6 +344,19 @@ export const api = {
   deleteBookingPhoto: (bookingId: string, photoId: string) =>
     request<any>(`/api/bookings/${bookingId}/photos?photoId=${encodeURIComponent(photoId)}`, {
       method: 'DELETE',
+    }),
+
+  // ─── Admin Staff & Loyalty Helpers ────────────────────────────────────────
+  deleteStaff: (staffId: string) =>
+    request<{ ok: boolean; success: boolean; authRevoked?: boolean; message?: string }>(
+      `/api/staff/${encodeURIComponent(staffId)}`,
+      { method: 'DELETE' }
+    ),
+
+  awardLoyaltyPoints: (payload: { email?: string; userId?: string; points: number; reason?: string }) =>
+    request<any>('/api/loyalty', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   // ─── Refunds ──────────────────────────────────────────────────────────────
@@ -396,28 +419,30 @@ export const api = {
       if (!canUseSupabaseFallback(error)) throw error;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new ApiError('Unauthorized', 401);
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, full_name, loyalty_points, created_at')
-        .eq('id', user.id)
-        .single();
-      if (profileError) throw new ApiError(profileError.message, 500);
-      const points = profile?.loyalty_points || 0;
+      const { data: ledgerRows, error: ledgerError } = await supabase
+        .from('loyalty_points')
+        .select('points')
+        .eq('user_id', user.id);
+      if (ledgerError) throw new ApiError(ledgerError.message, 500);
+      const points = Math.max(
+        0,
+        (ledgerRows || []).reduce((sum: number, row: any) => sum + Number(row.points || 0), 0)
+      );
       let tier = 'Bronze';
       let discount_percent = 0;
-      let next_tier_points = 100;
-      if (points >= 500) {
+      let next_tier_points = 500;
+      if (points >= 2500) {
         tier = 'Platinum';
         discount_percent = 15;
-        next_tier_points = 500;
-      } else if (points >= 250) {
+        next_tier_points = 2500;
+      } else if (points >= 1000) {
         tier = 'Gold';
         discount_percent = 10;
-        next_tier_points = 500;
-      } else if (points >= 100) {
+        next_tier_points = 2500;
+      } else if (points >= 500) {
         tier = 'Silver';
         discount_percent = 5;
-        next_tier_points = 250;
+        next_tier_points = 1000;
       }
       return {
         points,

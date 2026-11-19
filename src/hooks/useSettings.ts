@@ -7,6 +7,17 @@ export const SETTING_DEFAULTS: Record<string, string> = {
   booking_enabled: "true",
   booking_disabled_message:
     "We are currently fully booked and temporarily not accepting new bookings. Please check back soon or contact us directly.",
+  business_phone: "+44 7362 068202",
+  contact_email: "contact@makemeclean.co.uk",
+  email_info: "info@makemeclean.co.uk",
+  email_payment: "payment@makemeclean.co.uk",
+  email_recruitment: "recruitment@makemeclean.co.uk",
+  email_payroll: "payroll@makemeclean.co.uk",
+  company_legal_name: "MakeMeClean Ltd",
+  company_reg_number: "",
+  company_registered_address: "Wales, United Kingdom",
+  vat_registered: "false",
+  vat_number: "",
 };
 
 // Module-level cache so every component shares one fetch per session

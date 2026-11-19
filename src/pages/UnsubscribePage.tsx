@@ -19,11 +19,9 @@ export default function UnsubscribePage() {
     setStatus("idle");
 
     try {
-      const { error } = await supabase
-        .from("newsletter_subscriptions")
-        .update({ unsubscribed_at: new Date().toISOString() })
-        .eq("email", email.toLowerCase())
-        .is("unsubscribed_at", null);
+      const { error } = await supabase.rpc("unsubscribe_newsletter", {
+        p_email: email.trim().toLowerCase(),
+      });
 
       if (error) {
         setStatus("error");
@@ -32,7 +30,7 @@ export default function UnsubscribePage() {
       }
 
       setStatus("success");
-      setMessage("You've been unsubscribed. We won't send you any more emails.");
+      setMessage("You've been unsubscribed. We won't send you any more marketing emails.");
       setEmail("");
     } catch (err) {
       setStatus("error");

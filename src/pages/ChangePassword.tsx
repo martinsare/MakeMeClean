@@ -21,7 +21,10 @@ export default function ChangePassword() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (password.length < 10) { setError("Use at least 10 characters."); return; }
+    if (password.length < 10 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setError("Use at least 10 characters including at least one letter and one number.");
+      return;
+    }
     if (password !== confirm) { setError("Passwords do not match."); return; }
     setSubmitting(true);
     const { error } = await supabase.auth.updateUser({
@@ -33,9 +36,18 @@ export default function ChangePassword() {
       setSubmitting(false);
       return;
     }
+    let destination = "/dashboard";
+    if (user?.id) {
+      const [{ data: adminRow }, { data: staffRow }] = await Promise.all([
+        supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle(),
+        supabase.from("staff").select("id").eq("user_id", user.id).eq("active", true).maybeSingle(),
+      ]);
+      if (adminRow) destination = "/admin";
+      else if (staffRow) destination = "/staff";
+    }
     setDone(true);
     setSubmitting(false);
-    setTimeout(() => setLocation("/dashboard"), 900);
+    setTimeout(() => setLocation(destination), 900);
   };
 
   if (loading) {

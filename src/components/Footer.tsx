@@ -12,10 +12,20 @@ import logoUrl from "/logo.png";
 import { useSettings } from "@/hooks/useSettings";
 import { useServices } from "@/hooks/useServices";
 import { buildServiceCatalogFromDb } from "@/lib/serviceCatalog";
+import { openCookieSettings } from "@/components/ConsentBanner";
 
 export default function Footer() {
   const settings = useSettings();
   const { services } = useServices();
+  const socialLinks = [
+    { icon: Facebook, label: "Facebook", url: settings.social_facebook?.trim() },
+    { icon: Instagram, label: "Instagram", url: settings.social_instagram?.trim() },
+    { icon: Twitter, label: "Twitter", url: settings.social_twitter?.trim() },
+  ].filter((item): item is { icon: typeof Facebook; label: string; url: string } => Boolean(item.url && /^https?:\/\//i.test(item.url)));
+  const companyLegalName = settings.company_legal_name?.trim() || "MakeMeClean Ltd";
+  const companyRegNumber = settings.company_reg_number?.trim() || "";
+  const companyAddress = settings.company_registered_address?.trim() || "";
+  const vatNumber = settings.vat_registered === "true" ? settings.vat_number?.trim() || "" : "";
 
   return (
     <footer className="bg-gray-950 text-gray-400">
@@ -37,22 +47,22 @@ export default function Footer() {
               Trusted cleaning services across Wales. Vetted, insured, and
               available seven days a week.
             </p>
-            <div className="flex gap-2">
-              {[
-                { icon: Facebook, label: "Facebook" },
-                { icon: Instagram, label: "Instagram" },
-                { icon: Twitter, label: "Twitter" },
-              ].map(({ icon: Icon, label }) => (
-                <a
-                  key={label}
-                  href="#"
-                  aria-label={label}
-                  className="w-8 h-8 bg-gray-800 hover:bg-green-600 rounded-lg flex items-center justify-center transition-colors duration-150"
-                >
-                  <Icon className="w-3.5 h-3.5 text-gray-300" />
-                </a>
-              ))}
-            </div>
+            {socialLinks.length > 0 && (
+              <div className="flex gap-2">
+                {socialLinks.map(({ icon: Icon, label, url }) => (
+                  <a
+                    key={label}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={label}
+                    className="w-8 h-8 bg-gray-800 hover:bg-green-600 rounded-lg flex items-center justify-center transition-colors duration-150"
+                  >
+                    <Icon className="w-3.5 h-3.5 text-gray-300" />
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Services — live from DB */}
@@ -229,6 +239,15 @@ export default function Footer() {
                     Unsubscribe
                   </Link>
                 </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={openCookieSettings}
+                    className="hover:text-gray-300 transition-colors text-left"
+                  >
+                    Cookie Settings
+                  </button>
+                </li>
               </ul>
             </div>
             <div>
@@ -316,12 +335,13 @@ export default function Footer() {
             </div>
           </div>
           <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-gray-600">
-              &copy; {new Date().getFullYear()} MakeMeClean Ltd. All rights
-              reserved.
+            <p className="text-xs text-gray-500 text-center sm:text-left">
+              &copy; {new Date().getFullYear()} {companyLegalName}. All rights reserved.
+              {companyRegNumber ? ` · Reg. No: ${companyRegNumber}` : ""}
+              {vatNumber ? ` · VAT No: ${vatNumber}` : ""}
             </p>
-            <p className="text-xs text-gray-600">
-              Professional cleaning services across Wales, UK
+            <p className="text-xs text-gray-500 text-center sm:text-right">
+              {companyAddress || "Professional cleaning services across Wales, UK"}
             </p>
           </div>
         </div>

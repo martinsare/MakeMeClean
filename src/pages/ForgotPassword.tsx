@@ -20,6 +20,7 @@ export default function ForgotPassword() {
   const [error, setError] = useState("");
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [resetToken, setResetToken] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -107,17 +108,20 @@ export default function ForgotPassword() {
     setVerifying(true);
     setError("");
     const result = await verifyOtp(normalizedEmail, code, "password_reset");
-    if (!result.ok || !result.verified) {
+    if (!result.ok || !result.verified || !result.resetToken) {
       const msg =
-        result.reason === "expired_or_not_found"
-          ? "Code expired or not found. Please request a new one."
-          : "Incorrect code. Please try again.";
+        result.reason === "too_many_attempts"
+          ? "Too many incorrect attempts. Please request a new code."
+          : result.reason === "expired_or_not_found"
+            ? "Code expired or not found. Please request a new one."
+            : "Incorrect code. Please try again.";
       setError(msg);
       setOtp(["", "", "", "", "", ""]);
       otpRefs.current[0]?.focus();
       setVerifying(false);
       return;
     }
+    setResetToken(result.resetToken);
     setStage("reset");
     setVerifying(false);
   };
@@ -136,12 +140,17 @@ export default function ForgotPassword() {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setError("Password must be at least 8 characters and include a letter and a number.");
       return;
     }
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
+      return;
+    }
+    if (!resetToken) {
+      setError("Reset session expired. Please request a new code.");
+      setStage("email");
       return;
     }
 
@@ -150,7 +159,7 @@ export default function ForgotPassword() {
 
     try {
       const res = await supabase.functions.invoke("reset-password", {
-        body: { email: normalizedEmail, password },
+        body: { email: normalizedEmail, password, resetToken },
       });
       if (res.error) {
         setError(await readFunctionError(res.error));
@@ -318,7 +327,7 @@ export default function ForgotPassword() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 chars (letter + number)"
                     className="input-field pr-11"
                   />
                   <button

@@ -11,6 +11,15 @@ async function getPostLoginRedirect(userId: string) {
     .eq("user_id", userId)
     .maybeSingle();
   if (adminRow) return "/admin";
+
+  const { data: staffRow } = await supabase
+    .from("staff")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("active", true)
+    .maybeSingle();
+  if (staffRow) return "/staff";
+
   return "/dashboard";
 }
 
@@ -24,9 +33,19 @@ export default function Login() {
   const { user } = useAuth();
 
   useEffect(() => {
+    let cancelled = false;
     if (user) {
-      setLocation("/dashboard");
+      getPostLoginRedirect(user.id)
+        .then((target) => {
+          if (!cancelled) setLocation(target);
+        })
+        .catch(() => {
+          if (!cancelled) setLocation("/dashboard");
+        });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [user, setLocation]);
 
   const handleLogin = async (e: React.FormEvent) => {

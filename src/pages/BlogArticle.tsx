@@ -352,6 +352,19 @@ Most successful Airbnb hosts use professional cleaning for every turnover. It's 
   },
 ];
 
+function renderInlineBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i} className="font-bold text-gray-900">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
 export default function BlogArticle() {
   const [, params] = useRoute("/blog/:slug");
   const slug = params?.slug;
@@ -412,32 +425,45 @@ export default function BlogArticle() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
           <div className="prose prose-lg max-w-none text-gray-700">
             {post.content.split('\n\n').map((paragraph, idx) => {
-              if (paragraph.startsWith('##')) {
-                return (
-                  <h2 key={idx} className="text-2xl font-bold text-gray-900 mt-8 mb-4">
-                    {paragraph.replace('## ', '')}
-                  </h2>
-                );
-              }
-              if (paragraph.startsWith('###')) {
+              if (paragraph.startsWith('### ')) {
                 return (
                   <h3 key={idx} className="text-xl font-bold text-gray-900 mt-6 mb-3">
-                    {paragraph.replace('### ', '')}
+                    {paragraph.slice(4)}
                   </h3>
                 );
               }
-              if (paragraph.startsWith('-')) {
+              if (paragraph.startsWith('## ')) {
+                return (
+                  <h2 key={idx} className="text-2xl font-bold text-gray-900 mt-8 mb-4">
+                    {paragraph.slice(3)}
+                  </h2>
+                );
+              }
+              if (paragraph.startsWith('- ')) {
                 return (
                   <ul key={idx} className="list-disc list-inside space-y-2 mb-4 text-gray-700">
                     {paragraph.split('\n').map((item, i) => (
-                      <li key={i}>{item.replace('- ', '')}</li>
+                      <li key={i}>{renderInlineBold(item.replace(/^- /, ''))}</li>
                     ))}
                   </ul>
                 );
               }
+              if (paragraph.includes('\n- ')) {
+                const [lead, ...items] = paragraph.split('\n');
+                return (
+                  <div key={idx} className="mb-6">
+                    <p className="mb-2 leading-relaxed">{renderInlineBold(lead)}</p>
+                    <ul className="list-disc list-inside space-y-2 text-gray-700">
+                      {items.map((item, i) => (
+                        <li key={i}>{renderInlineBold(item.replace(/^- /, ''))}</li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              }
               return (
                 <p key={idx} className="mb-6 leading-relaxed">
-                  {paragraph}
+                  {renderInlineBold(paragraph)}
                 </p>
               );
             })}

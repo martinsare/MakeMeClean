@@ -47,7 +47,12 @@ export function useStaffRecord(userId?: string) {
     (async () => {
       if (!userId) { setStaff(null); setLoading(false); return; }
       setLoading(true);
-      const { data } = await supabase.from("staff").select("*").eq("user_id", userId).maybeSingle();
+      const { data } = await supabase
+        .from("staff")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("active", true)
+        .maybeSingle();
       if (cancelled) return;
       setStaff(data ?? null);
       setLoading(false);

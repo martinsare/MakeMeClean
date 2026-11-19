@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { User, Phone, MapPin, Mail, Save } from "lucide-react";
+import { User, Phone, MapPin, Mail, Save, Download, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import { walesCities } from "@/lib/services";
+import { useSettings } from "@/hooks/useSettings";
 
 interface Profile {
   full_name: string;
@@ -14,11 +15,14 @@ interface Profile {
 }
 
 export default function Profile() {
+  const settings = useSettings();
   const { user, loading } = useAuth();
   const [, setLocation] = useLocation();
   const [profile, setProfile] = useState<Profile>({ full_name: "", phone: "", address: "", city: "", postcode: "" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [fetchingProfile, setFetchingProfile] = useState(true);
 
   useEffect(() => {
@@ -42,8 +46,17 @@ export default function Profile() {
     e.preventDefault();
     if (!user) return;
     setSaving(true);
+    setSaveError("");
+    setSaved(false);
     // profiles is the master — update it first
-    await supabase.from("profiles").upsert({ id: user.id, ...profile });
+    const { error: profileErr } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, ...profile });
+    if (profileErr) {
+      setSaveError(profileErr.message || "Failed to save profile. Please try again.");
+      setSaving(false);
+      return;
+    }
     // propagate contact/location to every table that mirrors this user's personal data
     const contactPatch = {
       phone:    profile.phone    || null,
@@ -59,6 +72,43 @@ export default function Profile() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleExportMyData = async () => {
+    if (!user || exporting) return;
+    setExporting(true);
+    try {
+      const [bookingsRes, plansRes, reviewsRes, loyaltyRes] = await Promise.all([
+        supabase.from("bookings").select("*").eq("user_id", user.id),
+        supabase.from("recurring_plans").select("*").eq("user_id", user.id),
+        supabase.from("reviews").select("*").eq("user_id", user.id),
+        supabase.from("loyalty_points").select("*").eq("user_id", user.id),
+      ]);
+      const exportPayload = {
+        exported_at: new Date().toISOString(),
+        account: {
+          id: user.id,
+          email: user.email,
+          created_at: user.created_at,
+        },
+        profile,
+        bookings: bookingsRes.data ?? [],
+        recurring_plans: plansRes.data ?? [],
+        reviews: reviewsRes.data ?? [],
+        loyalty_points: loyaltyRes.data ?? [],
+      };
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `makemeclean-my-data-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading || fetchingProfile) {
@@ -92,6 +142,11 @@ export default function Profile() {
         </div>
 
         <div className="card">
+          {saveError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-5">
+              {saveError}
+            </div>
+          )}
           {saved && (
             <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-xl px-4 py-3 mb-5 flex items-center gap-2">
               <Save className="w-4 h-4" /> Profile saved successfully!
@@ -168,6 +223,39 @@ export default function Profile() {
               {saving ? "Saving..." : "Save Profile"}
             </button>
           </form>
+        </div>
+
+        {/* UK GDPR Data & Privacy Controls */}
+        <div className="card mt-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900">Your Data &amp; UK GDPR Rights</h2>
+              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                Download a machine-readable copy of your personal profile, bookings, recurring plans, and reviews, or request permanent account deletion.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleExportMyData}
+              disabled={exporting}
+              className="btn-secondary flex-1 inline-flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+            >
+              <Download className="w-4 h-4" />
+              {exporting ? "Preparing Export..." : "Export My Data (JSON)"}
+            </button>
+            <a
+              href={`mailto:${settings.email_info || "info@makemeclean.co.uk"}?subject=${encodeURIComponent("UK GDPR Account Deletion Request")}&body=${encodeURIComponent(`Please permanently delete my MakeMeClean account and personal data (subject to statutory HMRC invoice retention).\n\nAccount email: ${user?.email || ""}\nUser ID: ${user?.id || ""}`)}`}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-sm font-semibold transition-colors text-center"
+            >
+              Request Account Deletion
+            </a>
+          </div>
         </div>
       </div>
     </div>

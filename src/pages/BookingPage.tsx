@@ -43,6 +43,7 @@ import { supabase } from "@/lib/supabase";
 import {
   START_HOURS,
   calcTimeSlot,
+  calculateBookingPrice,
   walesCities,
   fetchActiveCities,
   Service,
@@ -366,6 +367,7 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [bookingId, setBookingId] = useState("");
+  const [confirmedPrice, setConfirmedPrice] = useState<number | null>(null);
   const [bookingAvailabilityChecked, setBookingAvailabilityChecked] =
     useState(false);
   const [bookingEnabled, setBookingEnabled] = useState(true);
@@ -618,10 +620,10 @@ export default function BookingPage() {
 
         const newMults =
           parseDurationMultipliers({
-            base: map.get("room_calc_base_hours"),
-            bed: map.get("room_calc_bed_hours"),
-            bath: map.get("room_calc_bath_hours"),
-            living: map.get("room_calc_living_hours"),
+            room_calc_base_hours: map.get("room_calc_base_hours"),
+            room_calc_bed_hours: map.get("room_calc_bed_hours"),
+            room_calc_bath_hours: map.get("room_calc_bath_hours"),
+            room_calc_living_hours: map.get("room_calc_living_hours"),
           }) || DEFAULT_DURATION_MULTIPLIERS;
         setMultipliers(newMults);
 
@@ -638,13 +640,14 @@ export default function BookingPage() {
   }, []);
 
   useEffect(() => {
-    const targetServiceId = params.serviceId || savedDraft?.serviceId;
+    const queryServiceId = new URLSearchParams(window.location.search).get("service");
+    const targetServiceId = params.serviceId || queryServiceId || savedDraft?.serviceId;
     if (targetServiceId && services.length > 0) {
       const s = services.find((svc) => svc.id === targetServiceId);
       if (s) {
         setSelectedService(s);
-        // Only set default scope if user has not yet entered rooms or had saved draft
-        if (!savedDraft?.serviceId) {
+        // Only set default scope if user explicitly chose a service via URL or has no saved draft
+        if (params.serviceId || queryServiceId || !savedDraft?.serviceId) {
           const cfg = getServiceBookingConfig(s.id || s.name);
           setPropertyType(cfg.defaultPropertyType);
           setBedrooms(cfg.field1.default);
@@ -756,14 +759,19 @@ export default function BookingPage() {
     0,
     Math.min(100, Number(selectedService?.discount_percent ?? 0))
   );
+  const recurringPct = liveDiscounts[recurringFreq] ?? 0;
+  const pricingBreakdown = calculateBookingPrice({
+    baseHourlyRate: baseHourlyPrice,
+    durationHours,
+    serviceDiscountPercent: svcDiscount,
+    recurringDiscountPercent: recurringPct,
+  });
   const hourlyPrice =
     svcDiscount > 0
       ? baseHourlyPrice * (1 - svcDiscount / 100)
       : baseHourlyPrice;
-  const totalPrice = hourlyPrice * durationHours;
-  const recurringPct = liveDiscounts[recurringFreq] ?? 0;
-  const finalPrice =
-    recurringPct > 0 ? totalPrice * (1 - recurringPct / 100) : totalPrice;
+  const totalPrice = pricingBreakdown.afterServiceDiscount;
+  const finalPrice = pricingBreakdown.finalPrice;
   const timeSlot = calcTimeSlot(startHour, durationHours);
   const selectedDayKey = getDayKeyFromDateStr(date || minDateStr);
   const selectedDayConfig = weeklySchedule[selectedDayKey] || { enabled: true, slots: [...START_HOURS] };
@@ -907,6 +915,9 @@ export default function BookingPage() {
       const newBooking = result.booking || result;
       clearDraft();
       setBookingId(newBooking.id);
+      if (newBooking?.price != null && Number.isFinite(Number(newBooking.price))) {
+        setConfirmedPrice(Number(newBooking.price));
+      }
       setStep(6);
     } catch (err: any) {
       setError(err?.message || "Failed to submit booking. Please try again.");
@@ -984,7 +995,7 @@ export default function BookingPage() {
             <div className="flex justify-between pt-2 border-t border-gray-200">
               <span className="text-gray-900 font-bold">Total:</span>
               <span className="text-green-700 font-black text-sm">
-                {formatCurrency(finalPrice)}
+                {formatCurrency(confirmedPrice ?? finalPrice)}
               </span>
             </div>
           </div>

@@ -246,20 +246,151 @@ export function parseBookingExtras(value: unknown): BookingExtra[] | null {
 export function parseDurationMultipliers(
   values: Record<string, unknown> | null | undefined,
 ): BookingDurationMultipliers | null {
-  const read = (key: string, fallback: number): number | null => {
-    const value = values?.[key];
+  const read = (primaryKey: string, aliasKey: string, fallback: number): number | null => {
+    const rawPrimary = values?.[primaryKey];
+    const value = rawPrimary != null && rawPrimary !== "" ? rawPrimary : values?.[aliasKey];
     if (value == null || value === "") return fallback;
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
 
-  const base = read("room_calc_base_hours", DEFAULT_DURATION_MULTIPLIERS.base);
-  const bed = read("room_calc_bed_hours", DEFAULT_DURATION_MULTIPLIERS.bed);
-  const bath = read("room_calc_bath_hours", DEFAULT_DURATION_MULTIPLIERS.bath);
-  const living = read("room_calc_living_hours", DEFAULT_DURATION_MULTIPLIERS.living);
+  const base = read("room_calc_base_hours", "base", DEFAULT_DURATION_MULTIPLIERS.base);
+  const bed = read("room_calc_bed_hours", "bed", DEFAULT_DURATION_MULTIPLIERS.bed);
+  const bath = read("room_calc_bath_hours", "bath", DEFAULT_DURATION_MULTIPLIERS.bath);
+  const living = read("room_calc_living_hours", "living", DEFAULT_DURATION_MULTIPLIERS.living);
 
   if (base == null || bed == null || bath == null || living == null) return null;
   return { base, bed, bath, living };
+}
+
+export type ServiceCategory =
+  | "ironing"
+  | "cleaning_ironing"
+  | "office"
+  | "airbnb"
+  | "domestic";
+
+export function getServiceCategory(serviceIdOrName: string): ServiceCategory {
+  const s = (serviceIdOrName || "").toLowerCase();
+  if (s === "ironing-service" || s.includes("ironing service") || (s.includes("ironing") && !s.includes("cleaning"))) {
+    return "ironing";
+  }
+  if (s === "cleaning-and-ironing" || s.includes("cleaning and ironing") || s.includes("cleaning & ironing")) {
+    return "cleaning_ironing";
+  }
+  if (s === "office-cleaning" || s.includes("office") || s.includes("commercial")) {
+    return "office";
+  }
+  if (s === "airbnb-cleaning" || s.includes("airbnb") || s.includes("holiday") || s.includes("short-let")) {
+    return "airbnb";
+  }
+  return "domestic";
+}
+
+export const SERVICE_CATEGORY_EXTRAS: Record<ServiceCategory, BookingExtra[]> = {
+  ironing: [
+    { id: "wash_fold", label: "Wash & Fold Cycle", icon: "🫧", duration: 1.0, desc: "Run washing machine cycle & tumble/air dry" },
+    { id: "bed_linen_change", label: "Fresh Bed Making", icon: "🛏️", duration: 0.5, desc: "Strip and redress beds with ironed linens" },
+    { id: "hangers_folding", label: "Wardrobe Staging", icon: "👗", duration: 0.5, desc: "Sort onto hangers & colour-coordinated fold" },
+    { id: "steam_press", label: "Steam Touch-Up", icon: "💨", duration: 0.5, desc: "Delicate vertical steam freshening" },
+  ],
+  cleaning_ironing: [
+    { id: "inside_oven", label: "Inside Oven & Grill", icon: "🍳", duration: 0.75, desc: "Deep degreasing & rack soaking" },
+    { id: "inside_fridge", label: "Inside Fridge / Freezer", icon: "❄️", duration: 0.5, desc: "Shelves washed & sanitized" },
+    { id: "bed_linen_change", label: "Bed Linen Change", icon: "🛏️", duration: 0.5, desc: "Fresh bedsheets changed & made up" },
+    { id: "inside_windows", label: "Interior Window Glass", icon: "🪟", duration: 0.5, desc: "Internal panes & sills buffed" },
+  ],
+  office: [
+    { id: "kitchenette_deep", label: "Kitchenette & Microwave", icon: "☕", duration: 0.75, desc: "Coffee machines, sink, fridge & counters" },
+    { id: "it_sanitise", label: "IT & Phone Sanitisation", icon: "⌨️", duration: 0.75, desc: "Antiviral wipe of keyboards, mice & screens" },
+    { id: "glass_partitions", label: "Glass Partitions & Doors", icon: "🪟", duration: 0.5, desc: "Meeting room glass buffed streak-free" },
+    { id: "bin_recycling", label: "Waste & Recycling Sort", icon: "♻️", duration: 0.5, desc: "Central collection & recycling liners changed" },
+  ],
+  airbnb: DEFAULT_BOOKING_EXTRAS,
+  domestic: DEFAULT_BOOKING_EXTRAS,
+};
+
+export const SERVICE_CATEGORY_FIELD_LIMITS: Record<
+  ServiceCategory,
+  { field1Max: number; field2Max: number; field3Max: number }
+> = {
+  ironing: { field1Max: 8, field2Max: 20, field3Max: 8 },
+  cleaning_ironing: { field1Max: 8, field2Max: 6, field3Max: 6 },
+  office: { field1Max: 50, field2Max: 12, field3Max: 8 },
+  airbnb: { field1Max: 8, field2Max: 6, field3Max: 5 },
+  domestic: {
+    field1Max: MAX_ROOM_COUNTS.bedrooms,
+    field2Max: MAX_ROOM_COUNTS.bathrooms,
+    field3Max: MAX_ROOM_COUNTS.livingAreas,
+  },
+};
+
+export function getAllowedExtrasForService(
+  serviceIdOrName: string,
+  configuredDomesticExtras: BookingExtra[] = DEFAULT_BOOKING_EXTRAS,
+): BookingExtra[] {
+  const category = getServiceCategory(serviceIdOrName);
+  if (category === "domestic") {
+    return configuredDomesticExtras;
+  }
+  return SERVICE_CATEGORY_EXTRAS[category];
+}
+
+export function getServiceFieldLimits(serviceIdOrName: string): {
+  field1Max: number;
+  field2Max: number;
+  field3Max: number;
+} {
+  return SERVICE_CATEGORY_FIELD_LIMITS[getServiceCategory(serviceIdOrName)];
+}
+
+export function calculateRecommendedHoursForService(
+  serviceIdOrName: string,
+  val1: number,
+  val2: number,
+  val3: number,
+  selectedExtraIds: string[],
+  multipliers: BookingDurationMultipliers = DEFAULT_DURATION_MULTIPLIERS,
+  configuredDomesticExtras: BookingExtra[] = DEFAULT_BOOKING_EXTRAS,
+): number {
+  const category = getServiceCategory(serviceIdOrName);
+  const extras = getAllowedExtrasForService(serviceIdOrName, configuredDomesticExtras);
+
+  if (category === "ironing") {
+    let hours = val1 * 1.0 + val2 * 0.1 + val3 * 0.35;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+
+  if (category === "office") {
+    let hours = 1.0 + val1 * 0.1 + val2 * 0.5 + val3 * 0.5;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+
+  if (category === "cleaning_ironing") {
+    let hours = 1.5 + val1 * 0.5 + val2 * 0.5 + val3 * 1.0;
+    for (const extraId of new Set(selectedExtraIds)) {
+      const extra = extras.find((item) => item.id === extraId);
+      if (extra) hours += extra.duration;
+    }
+    return Math.max(MIN_DURATION_HOURS, Math.round(hours * 2) / 2);
+  }
+
+  return calculateRecommendedHours(
+    val1,
+    val2,
+    val3,
+    selectedExtraIds,
+    multipliers,
+    extras,
+  );
 }
 
 /**
@@ -316,42 +447,136 @@ export function calculateDurationHours(timeSlot: string): number {
 }
 
 /**
- * Returns true if the scheduled slot start time on the booking date has already arrived or passed.
+ * Returns the current UK (Europe/London) local date & time components,
+ * ensuring BST/GMT accuracy on UTC servers and non-UK browsers.
  */
-export function isBookingStartTimePassed(dateStr: string, timeSlot?: string | null): boolean {
-  if (!dateStr) return false;
-  const startHourStr = (timeSlot || "09:00").split(/[-–]/)[0]?.trim() || "09:00";
-  const [hour, min] = startHourStr.split(":").map(Number);
-  const scheduledTime = new Date(`${dateStr}T${String(hour || 9).padStart(2, "0")}:${String(min || 0).padStart(2, "0")}:00`);
-  const now = new Date();
-  return Number.isFinite(scheduledTime.getTime()) && now > scheduledTime;
+export function getUkNowParts(now: Date = new Date()): {
+  dateStr: string;
+  hour: number;
+  minute: number;
+  totalMinutes: number;
+} {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  const dateStr = `${part("year")}-${part("month")}-${part("day")}`;
+  const rawHour = Number(part("hour"));
+  const hour = rawHour === 24 ? 0 : rawHour;
+  const minute = Number(part("minute"));
+  return {
+    dateStr,
+    hour,
+    minute,
+    totalMinutes: hour * 60 + minute,
+  };
 }
 
 /**
- * Returns true if the entire scheduled cleaning slot has concluded.
+ * Computes hours remaining until a scheduled UK (Europe/London) booking start time.
+ * Positive = in the future, negative = already passed.
+ */
+export function getHoursUntilBookingStart(
+  dateStr: string,
+  timeSlot?: string | null,
+  now: Date = new Date(),
+): number {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return 0;
+  const startHourStr = (timeSlot || "09:00").split(/[-–]/)[0]?.trim() || "09:00";
+  const [hour, min] = startHourStr.split(":").map(Number);
+  const startMinutes = (Number.isFinite(hour) ? hour : 9) * 60 + (Number.isFinite(min) ? min : 0);
+
+  const ukNow = getUkNowParts(now);
+  const targetDayUtc = Date.UTC(
+    Number(dateStr.slice(0, 4)),
+    Number(dateStr.slice(5, 7)) - 1,
+    Number(dateStr.slice(8, 10)),
+  );
+  const nowDayUtc = Date.UTC(
+    Number(ukNow.dateStr.slice(0, 4)),
+    Number(ukNow.dateStr.slice(5, 7)) - 1,
+    Number(ukNow.dateStr.slice(8, 10)),
+  );
+  const dayDiffMinutes = Math.round((targetDayUtc - nowDayUtc) / 60000);
+  return (dayDiffMinutes + startMinutes - ukNow.totalMinutes) / 60;
+}
+
+/**
+ * Shared authoritative booking price calculation (used by both frontend & backend).
+ * Applies service discount first, then recurring discount, with total effective discount capped at 50%.
+ */
+export function calculateBookingPrice(params: {
+  baseHourlyRate: number;
+  durationHours: number;
+  serviceDiscountPercent?: number;
+  recurringDiscountPercent?: number;
+}): {
+  basePrice: number;
+  afterServiceDiscount: number;
+  effectiveDiscountPercent: number;
+  finalPrice: number;
+} {
+  const rate = Number.isFinite(params.baseHourlyRate) && params.baseHourlyRate > 0 ? params.baseHourlyRate : 20;
+  const duration = Number.isFinite(params.durationHours) && params.durationHours > 0 ? params.durationHours : 2;
+  const svcPct = Math.max(0, Math.min(100, Number(params.serviceDiscountPercent) || 0));
+  const recPct = Math.max(0, Math.min(100, Number(params.recurringDiscountPercent) || 0));
+
+  const basePrice = Math.round(rate * duration * 100) / 100;
+  const afterServiceDiscount = Math.round(rate * duration * (1 - svcPct / 100) * 100) / 100;
+  const multiplier = (1 - svcPct / 100) * (1 - recPct / 100);
+  const cappedMultiplier = Math.max(0.5, multiplier); // Max 50% total combined discount
+  const effectiveDiscountPercent = Math.round((1 - cappedMultiplier) * 10000) / 100;
+  const finalPrice = Math.round(rate * duration * cappedMultiplier * 100) / 100;
+
+  return { basePrice, afterServiceDiscount, effectiveDiscountPercent, finalPrice };
+}
+
+/**
+ * Returns true if the scheduled slot start time on the booking date (Europe/London) has already arrived or passed.
+ */
+export function isBookingStartTimePassed(dateStr: string, timeSlot?: string | null): boolean {
+  if (!dateStr) return false;
+  return getHoursUntilBookingStart(dateStr, timeSlot) <= 0;
+}
+
+/**
+ * Returns true if the entire scheduled cleaning slot (Europe/London) has concluded.
  */
 export function isBookingEndTimePassed(dateStr: string, timeSlot?: string | null, durationHours?: number | null): boolean {
-  if (!dateStr) return false;
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
   const parts = (timeSlot || "").split(/[-–]/).map((p) => p.trim());
-  let endHour = 11;
-  let endMin = 0;
+  let endMinutes = 11 * 60;
 
   if (parts.length >= 2 && parts[1]) {
     const [h, m] = parts[1].split(":").map(Number);
-    if (Number.isFinite(h)) endHour = h;
-    if (Number.isFinite(m)) endMin = m || 0;
+    if (Number.isFinite(h)) {
+      endMinutes = h * 60 + (Number.isFinite(m) ? m : 0);
+    }
   } else {
     const startStr = parts[0] || "09:00";
     const [startH, startM] = startStr.split(":").map(Number);
     const duration = durationHours || 2;
-    const totalMinutes = (startH || 9) * 60 + (startM || 0) + Math.round(duration * 60);
-    endHour = Math.floor(totalMinutes / 60);
-    endMin = totalMinutes % 60;
+    endMinutes = (Number.isFinite(startH) ? startH : 9) * 60 + (Number.isFinite(startM) ? startM : 0) + Math.round(duration * 60);
   }
 
-  const scheduledEnd = new Date(
-    `${dateStr}T${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}:00`
+  const ukNow = getUkNowParts();
+  const targetDayUtc = Date.UTC(
+    Number(dateStr.slice(0, 4)),
+    Number(dateStr.slice(5, 7)) - 1,
+    Number(dateStr.slice(8, 10)),
   );
-  const now = new Date();
-  return Number.isFinite(scheduledEnd.getTime()) && now > scheduledEnd;
+  const nowDayUtc = Date.UTC(
+    Number(ukNow.dateStr.slice(0, 4)),
+    Number(ukNow.dateStr.slice(5, 7)) - 1,
+    Number(ukNow.dateStr.slice(8, 10)),
+  );
+  const dayDiffMinutes = Math.round((targetDayUtc - nowDayUtc) / 60000);
+  return dayDiffMinutes + endMinutes <= ukNow.totalMinutes;
 }

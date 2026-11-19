@@ -59,19 +59,16 @@ export default function AdminContactMessages() {
     setSendError("");
     const { data: { session } } = await supabase.auth.getSession();
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reply-contact`,
+      const { data: json, error: fnErr } = await supabase.functions.invoke(
+        "reply-contact",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({ messageId: msg.id, replyText: replyText.trim() }),
+          body: { messageId: msg.id, replyText: replyText.trim() },
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
         }
       );
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to send reply");
+      if (fnErr || !json?.ok) throw new Error(json?.error ?? fnErr?.message ?? "Failed to send reply");
       setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, status: "replied" } : m));
       setSentId(msg.id);
       setReplyText("");

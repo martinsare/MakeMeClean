@@ -2,7 +2,7 @@ import { VercelRequest, VercelResponse, verifyAuth, sendSuccess, sendError } fro
 
 export async function handleNotifications(req: VercelRequest, res: VercelResponse) {
   const { user, supabase, error: authError } = await verifyAuth(req);
-  if (authError || !user) {
+  if (authError || !user || !supabase) {
     return sendError(res, authError || 'Unauthorized', 401);
   }
 
@@ -22,7 +22,8 @@ export async function handleNotifications(req: VercelRequest, res: VercelRespons
 
       return sendSuccess(res, data || []);
     } catch (err: any) {
-      return sendError(res, err?.message || 'Failed to fetch notifications', 500);
+      console.error('[notifications GET] error:', err);
+      return sendError(res, 'Failed to fetch notifications', 500);
     }
   }
 
@@ -33,22 +34,25 @@ export async function handleNotifications(req: VercelRequest, res: VercelRespons
       const notifId = body.notificationId || body.id;
 
       if (notifId) {
-        await supabase
+        const { error } = await supabase
           .from('notifications')
           .update({ read: true })
           .eq('id', notifId)
           .eq('user_id', user.id);
+        if (error) return sendError(res, error.message, 500);
       } else {
-        await supabase
+        const { error } = await supabase
           .from('notifications')
           .update({ read: true })
           .eq('user_id', user.id)
           .eq('read', false);
+        if (error) return sendError(res, error.message, 500);
       }
 
       return sendSuccess(res, { success: true });
     } catch (err: any) {
-      return sendError(res, err?.message || 'Failed to update notifications', 500);
+      console.error('[notifications PATCH] error:', err);
+      return sendError(res, 'Failed to update notifications', 500);
     }
   }
 

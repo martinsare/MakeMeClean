@@ -130,9 +130,15 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-green-700 focus:text-white focus:text-sm focus:font-bold focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <ScrollToTop />
       {!isAdminRoute && !isStaffRoute && <Navbar />}
-      <main className="flex-1">
+      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
         <Suspense
           fallback={
             <div className="min-h-[40vh] flex items-center justify-center">

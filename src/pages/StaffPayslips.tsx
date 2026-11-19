@@ -77,7 +77,11 @@ export default function StaffPayslips() {
   }, [user, loading]);
 
   useEffect(() => {
-    if (!staff?.id) return;
+    if (staffLoading) return;
+    if (!staff?.id) {
+      setFetching(false);
+      return;
+    }
     supabase
       .from("payslips")
       .select("*")
@@ -87,12 +91,23 @@ export default function StaffPayslips() {
         setPayslips((data as Payslip[]) ?? []);
         setFetching(false);
       });
-  }, [staff?.id]);
+  }, [staff?.id, staffLoading]);
 
   if (loading || staffLoading || fetching) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 text-center">
+        <div className="bg-white border border-gray-100 rounded-2xl p-8 max-w-md w-full shadow-sm">
+          <p className="text-lg font-black text-gray-900 mb-1">Active staff profile required</p>
+          <p className="text-sm text-gray-500">Your account is not linked to an active staff profile.</p>
+        </div>
       </div>
     );
   }
@@ -168,13 +183,13 @@ export default function StaffPayslips() {
                     <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
                       <div>
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-                          Official UK Payslip
+                          Payslip Summary (Estimate)
                         </p>
                         <p className="text-lg font-black text-gray-900 mt-0.5">
-                          MakeMeClean Ltd
+                          {settings.company_legal_name || "MakeMeClean Ltd"}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          Wales, United Kingdom ·{" "}
+                          {settings.company_registered_address || "Wales, United Kingdom"} ·{" "}
                           {settings.email_payroll ||
                             "payroll@makemeclean.co.uk"}
                         </p>
@@ -270,8 +285,8 @@ export default function StaffPayslips() {
 
                     {/* Employer NI (informational) */}
                     <p className="text-xs text-gray-400">
-                      Employer NI contribution (not deducted from your pay):{" "}
-                      {formatCurrency(p.ni_employer)}
+                      Estimated Employer NI contribution (not deducted from your pay):{" "}
+                      {formatCurrency(p.ni_employer)}. Statutory HMRC RTI payslips are issued via our payroll provider.
                     </p>
 
                     {p.notes && (

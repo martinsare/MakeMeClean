@@ -2,6 +2,7 @@ import {
   VercelRequest,
   VercelResponse,
   verifyAuth,
+  getAdminSupabase,
   sendSuccess,
   sendError,
 } from '../_lib/server.js';
@@ -19,7 +20,6 @@ export async function handlePlans(
   }
 
   const { supabase, user } = auth;
-  if (!supabase || !user) return sendError(res, 'Authentication required', 401);
   const segments = subPath.split('/').filter(Boolean);
   const planId = segments[0] || params.id;
 
@@ -45,17 +45,24 @@ export async function handlePlans(
 
     const { data: plan, error: fetchErr } = await supabase
       .from('recurring_plans')
-      .select('id, user_id')
+      .select('id, user_id, status')
       .eq('id', planId)
       .single();
 
     if (fetchErr || !plan) return sendError(res, 'Plan not found', 404);
     if (plan.user_id !== user.id) return sendError(res, 'Unauthorized', 403);
 
-    const { data: updated, error: updateErr } = await supabase
+    const admin = getAdminSupabase();
+    const updatePayload: Record<string, unknown> = { status };
+    if (status === 'active') {
+      updatePayload.failure_count = 0;
+    }
+
+    const { data: updated, error: updateErr } = await admin
       .from('recurring_plans')
-      .update({ status })
+      .update(updatePayload)
       .eq('id', planId)
+      .eq('user_id', user.id)
       .select()
       .single();
 

@@ -44,12 +44,16 @@ export default function AdminRefunds() {
       .select("*")
       .order("requested_at", { ascending: false });
 
-    const bookingIds = (data ?? []).map((r: any) => r.booking_id);
-    const userIds = (data ?? []).map((r: any) => r.user_id);
+    const bookingIds = [...new Set((data ?? []).map((r: any) => r.booking_id).filter(Boolean))];
+    const userIds = [...new Set((data ?? []).map((r: any) => r.user_id).filter(Boolean))];
 
     const [{ data: bookings }, { data: profiles }] = await Promise.all([
-      supabase.from("bookings").select("id, service_name, price, date").in("id", bookingIds),
-      supabase.from("profiles").select("id, full_name").in("id", userIds),
+      bookingIds.length > 0
+        ? supabase.from("bookings").select("id, service_name, price, date").in("id", bookingIds)
+        : Promise.resolve({ data: [] as any[] }),
+      userIds.length > 0
+        ? supabase.from("profiles").select("id, full_name").in("id", userIds)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
 
     const bkMap: Record<string, any> = {};
@@ -71,12 +75,12 @@ export default function AdminRefunds() {
     if (!loading && !roleLoading && isAdmin) fetchRefunds();
   }, [loading, roleLoading, isAdmin]);
 
-  const approve = async (refundId: string) => {
+  const approve = async (refundId: string, notes: string) => {
     setApproving(refundId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error: fnErr } = await supabase.functions.invoke("process-stripe-refund", {
-        body: { refundRequestId: refundId },
+        body: { refundRequestId: refundId, adminNotes: notes.trim() || undefined },
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
       });
       if (fnErr || !data?.ok) throw new Error(data?.error ?? fnErr?.message ?? "Failed to process refund");
@@ -173,7 +177,10 @@ export default function AdminRefunds() {
                       )}
                     </div>
                     <p className="text-xs text-gray-400 truncate">
-                      {refund.booking?.service_name} • {formatCurrency(refund.booking?.price ?? 0)}
+                      {refund.booking?.service_name} • Requested {formatCurrency(refund.refund_amount ?? refund.booking?.price ?? 0)}
+                      {refund.refund_amount != null && refund.booking?.price != null && refund.refund_amount < refund.booking.price
+                        ? ` (of ${formatCurrency(refund.booking.price)})`
+                        : ""}
                     </p>
                     <p className="text-sm text-gray-600 font-semibold mt-1">{refund.reason}</p>
                   </div>
@@ -190,7 +197,11 @@ export default function AdminRefunds() {
                       <div className="space-y-2">
                         <p className="text-sm text-gray-700"><strong>Reason:</strong> {refund.reason}</p>
                         <p className="text-sm text-gray-700"><strong>Booking Date:</strong> {refund.booking?.date}</p>
-                        <p className="text-sm text-gray-700"><strong>Amount:</strong> {formatCurrency(refund.booking?.price ?? 0)}</p>
+                        <p className="text-sm text-gray-700">
+                          <strong>Requested Refund:</strong>{" "}
+                          {formatCurrency(refund.refund_amount ?? refund.booking?.price ?? 0)}
+                          {refund.booking?.price != null ? ` (Booking total: ${formatCurrency(refund.booking.price)})` : ""}
+                        </p>
                         {refund.admin_notes && <p className="text-sm text-gray-700"><strong>Admin Notes:</strong> {refund.admin_notes}</p>}
                       </div>
                     </div>
@@ -221,7 +232,7 @@ function RefundDecisionForm({
   isProcessing,
 }: {
   refundId: string;
-  onApprove: (id: string) => Promise<void>;
+  onApprove: (id: string, notes: string) => Promise<void>;
   onReject: (id: string, notes: string) => Promise<void>;
   isProcessing: boolean;
 }) {
@@ -242,7 +253,7 @@ function RefundDecisionForm({
       </div>
       <div className="flex gap-3">
         <button
-          onClick={() => onApprove(refundId)}
+          onClick={() => onApprove(refundId, notes)}
           disabled={isProcessing}
           className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-bold rounded-xl transition-colors"
         >

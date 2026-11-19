@@ -1,21 +1,35 @@
 // Supabase Edge Function: hire-applicant
-// Admin-only: creates a Supabase Auth user for a hired applicant, creates/updates staff row, emails temporary credentials.
+// Admin-only: creates or links Supabase Auth user via O(1) email lookup, upserts staff row,
+// and emails a secure one-time password setup link (never emailing plaintext passwords).
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-function corsHeaders() {
-  const origin = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+function corsHeaders(req?: Request) {
+  const configured = Deno.env.get("ALLOWED_ORIGIN");
+  const reqOrigin = req?.headers.get("Origin") ?? "";
+  let allowOrigin = configured || "https://makemeclean.co.uk";
+  if (
+    reqOrigin &&
+    (reqOrigin === "https://makemeclean.co.uk" ||
+      reqOrigin === "https://www.makemeclean.co.uk" ||
+      reqOrigin.startsWith("http://localhost:") ||
+      reqOrigin.startsWith("http://127.0.0.1:") ||
+      (configured && reqOrigin === configured))
+  ) {
+    allowOrigin = reqOrigin;
+  }
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
   };
 }
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
 
@@ -25,7 +39,16 @@ function mustGetEnv(name: string) {
   return value;
 }
 
-function randomPassword(length = 14) {
+function escapeHtml(s: string) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function randomInitialSecret(length = 24) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let out = "";
@@ -33,29 +56,31 @@ function randomPassword(length = 14) {
   return out;
 }
 
-async function sendWelcomeEmail(args: { toEmail: string; tempPassword?: string }) {
+async function sendWelcomeEmail(args: { toEmail: string; setupLink?: string; portalUrl: string }) {
   const apiKey = mustGetEnv("BREVO_API_KEY");
   const sender = { email: "recruitment@makemeclean.co.uk", name: "MakeMeClean Recruitment" };
-  const isNew = Boolean(args.tempPassword);
+  const isNew = Boolean(args.setupLink);
 
-  const credentialsBlock = isNew
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;margin-top:12px">
-              <tr><td colspan="2" style="background:#f9fafb;padding:12px 14px;font-weight:800;font-size:12px;color:#111827">Login details</td></tr>
-              <tr>
-                <td style="padding:10px 14px;border-top:1px solid #eef2f7;font-weight:700;font-size:13px;color:#6b7280">Username</td>
-                <td style="padding:10px 14px;border-top:1px solid #eef2f7;font-weight:900;font-size:13px;color:#111827;text-align:right">${args.toEmail}</td>
-              </tr>
-              <tr>
-                <td style="padding:10px 14px;border-top:1px solid #eef2f7;font-weight:700;font-size:13px;color:#6b7280">Temporary password</td>
-                <td style="padding:10px 14px;border-top:1px solid #eef2f7;font-weight:900;font-size:13px;color:#111827;text-align:right">${args.tempPassword}</td>
-              </tr>
-            </table>
-            <p style="margin:14px 0 0;font-size:12px;line-height:1.6;color:#6b7280">For security, please change your password immediately after signing in.</p>`
-    : `<p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#374151">You already have a MakeMeClean account. Sign in at <b>/login</b> using your existing email and password to access your staff portal.</p>`;
-
-  const bodyIntro = isNew
-    ? "Your staff portal access is ready. Use the details below to sign in at <b>/login</b>. You'll be asked to change your password after login."
-    : "We're delighted to welcome you to the MakeMeClean team. Your staff portal is now active.";
+  const actionBlock = isNew
+    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.6;color:#374151">
+         Click the secure button below to set your staff portal password and activate your account:
+       </p>
+       <p style="margin:18px 0 0">
+         <a href="${escapeHtml(args.setupLink!)}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 20px;border-radius:12px">
+           Set My Password &amp; Sign In
+         </a>
+       </p>
+       <p style="margin:14px 0 0;font-size:12px;line-height:1.6;color:#6b7280">
+         For security, this one-time link expires shortly. If it expires, use "Forgot password" on ${escapeHtml(args.portalUrl)}/login.
+       </p>`
+    : `<p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#374151">
+         You already have a MakeMeClean account. Sign in using your existing email and password to access your staff portal.
+       </p>
+       <p style="margin:18px 0 0">
+         <a href="${escapeHtml(args.portalUrl)}/staff" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 20px;border-radius:12px">
+           Open Staff Portal
+         </a>
+       </p>`;
 
   const html = `<!doctype html>
 <html>
@@ -69,8 +94,10 @@ async function sendWelcomeEmail(args: { toEmail: string; tempPassword?: string }
           </td></tr>
           <tr><td style="padding:18px 22px">
             <h2 style="margin:0 0 10px;font-weight:900;font-size:18px;color:#111827">Welcome onboard</h2>
-            <p style="margin:0 0 4px;font-size:14px;line-height:1.6;color:#374151">${bodyIntro}</p>
-            ${credentialsBlock}
+            <p style="margin:0 0 4px;font-size:14px;line-height:1.6;color:#374151">
+              We're delighted to welcome you to MakeMeClean! Your staff profile is now active.
+            </p>
+            ${actionBlock}
           </td></tr>
         </table>
       </td></tr>
@@ -95,71 +122,76 @@ async function sendWelcomeEmail(args: { toEmail: string; tempPassword?: string }
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders() });
-  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders(req) });
+  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" }, req);
 
   try {
     const supabaseUrl = mustGetEnv("SUPABASE_URL");
     const serviceKey = mustGetEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = mustGetEnv("ANON_KEY");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? mustGetEnv("ANON_KEY");
 
-    // Verify caller is an authenticated admin
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: authData, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorized" });
+    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorized" }, req);
 
     const adminClient = createClient(supabaseUrl, serviceKey);
-    const { data: adminRow } = await adminClient.from("admins").select("user_id").eq("user_id", authData.user.id).maybeSingle();
-    if (!adminRow) return json(403, { ok: false, error: "Forbidden" });
+    const { data: adminRow } = await adminClient
+      .from("admins")
+      .select("user_id")
+      .eq("user_id", authData.user.id)
+      .maybeSingle();
+    if (!adminRow) return json(403, { ok: false, error: "Forbidden" }, req);
 
     const { applicationId } = (await req.json()) as { applicationId?: string };
-    if (!applicationId) return json(400, { ok: false, error: "Missing applicationId" });
+    if (!applicationId) return json(400, { ok: false, error: "Missing applicationId" }, req);
 
-    const { data: app, error: appErr } = await adminClient.from("job_applications").select("*").eq("id", applicationId).single();
-    if (appErr || !app) return json(404, { ok: false, error: "Applicant not found" });
+    const { data: app, error: appErr } = await adminClient
+      .from("job_applications")
+      .select("*")
+      .eq("id", applicationId)
+      .single();
+    if (appErr || !app) return json(404, { ok: false, error: "Applicant not found" }, req);
 
-    // Try to create auth user — if already registered, look them up instead
-    let authUserId: string;
-    let isNewUser = false;
-    const tempPassword = randomPassword();
+    const cleanEmail = String(app.email).trim().toLowerCase();
+    const siteUrl = (Deno.env.get("SITE_URL") ?? "https://makemeclean.co.uk").replace(/\/$/, "");
 
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email: app.email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: { must_change_password: true, staff_role: app.role ?? "Staff" },
-    });
+    let authUserId: string | null = app.user_id || null;
+    let setupLink: string | undefined;
 
-    if (createErr) {
-      const alreadyExists =
-        createErr.message?.toLowerCase().includes("already been registered") ||
-        createErr.message?.toLowerCase().includes("already registered") ||
-        createErr.message?.toLowerCase().includes("already exists") ||
-        (createErr as any).status === 422;
+    if (!authUserId) {
+      // O(1) check if auth user already exists
+      const { data: existingId } = await adminClient.rpc("get_auth_user_id_by_email", { p_email: cleanEmail });
+      if (existingId) {
+        authUserId = String(existingId);
+      } else {
+        const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
+          email: cleanEmail,
+          password: randomInitialSecret(),
+          email_confirm: true,
+          user_metadata: { must_change_password: true, staff_role: app.role ?? "Staff" },
+        });
+        if (createErr || !created?.user?.id) {
+          return json(500, { ok: false, error: createErr?.message || "Failed to create user" }, req);
+        }
+        authUserId = created.user.id;
 
-      if (!alreadyExists) return json(500, { ok: false, error: createErr.message });
-
-      const { data: { users }, error: listErr } = await adminClient.auth.admin.listUsers();
-      if (listErr) return json(500, { ok: false, error: listErr.message });
-
-      const existing = users.find((u) => u.email?.toLowerCase() === app.email.toLowerCase());
-      if (!existing) return json(500, { ok: false, error: "User already registered but could not be found" });
-
-      authUserId = existing.id;
-    } else {
-      if (!created?.user?.id) return json(500, { ok: false, error: "Failed to create user" });
-      authUserId = created.user.id;
-      isNewUser = true;
+        // Generate a secure one-time password setup link instead of emailing plaintext passwords
+        const { data: linkData } = await adminClient.auth.admin.generateLink({
+          type: "recovery",
+          email: cleanEmail,
+          options: { redirectTo: `${siteUrl}/change-password` },
+        });
+        setupLink = linkData?.properties?.action_link;
+      }
     }
 
-    // Upsert staff row (by email)
     const staffRow = {
       user_id: authUserId,
       application_id: app.id,
       first_name: app.first_name,
       last_name: app.last_name,
-      email: app.email,
+      email: cleanEmail,
       phone: app.phone,
       city: app.city,
       postcode: app.postcode,
@@ -167,19 +199,19 @@ Deno.serve(async (req) => {
       active: true,
     };
     const { error: staffErr } = await adminClient.from("staff").upsert(staffRow, { onConflict: "email" });
-    if (staffErr) return json(500, { ok: false, error: staffErr.message });
+    if (staffErr) return json(500, { ok: false, error: staffErr.message }, req);
 
     await adminClient.from("job_applications").update({ status: "hired" }).eq("id", app.id);
 
-    // Always send a welcome email — with credentials for new accounts, portal link for existing
     try {
-      await sendWelcomeEmail({ toEmail: app.email, tempPassword: isNewUser ? tempPassword : undefined });
-    } catch {
-      // Email failure is non-fatal — staff record and status already saved
+      await sendWelcomeEmail({ toEmail: cleanEmail, setupLink, portalUrl: siteUrl });
+    } catch (emailErr) {
+      console.error("[hire-applicant] welcome email failed:", emailErr);
     }
 
-    return json(200, { ok: true });
+    return json(200, { ok: true }, req);
   } catch (e) {
-    return json(500, { ok: false, error: String((e as any)?.message ?? e) });
+    console.error("[hire-applicant]", e);
+    return json(500, { ok: false, error: "Failed to hire applicant" }, req);
   }
 });

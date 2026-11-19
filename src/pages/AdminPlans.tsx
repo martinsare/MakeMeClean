@@ -41,12 +41,15 @@ export default function AdminPlans() {
       .select("*")
       .order("created_at", { ascending: false });
     
-    // Fetch user details separately
-    const userIds = (data ?? []).map((p: any) => p.user_id);
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", userIds);
+    // Fetch user details separately (deduplicated & guarded against empty IN list)
+    const userIds = [...new Set((data ?? []).map((p: any) => p.user_id).filter(Boolean))];
+    const { data: profiles } =
+      userIds.length > 0
+        ? await supabase
+            .from("profiles")
+            .select("id, full_name")
+            .in("id", userIds)
+        : { data: [] as any[] };
     const pfMap: Record<string, any> = {};
     for (const p of profiles ?? []) pfMap[p.id] = p;
 
@@ -84,10 +87,22 @@ export default function AdminPlans() {
     }
   }, [loading, roleLoading, isAdmin]);
 
-  const cancelPlan = async (id: string) => {
+  const cancelPlan = async (id: string, customerName?: string | null) => {
+    const confirmed = window.confirm(
+      `Cancel this recurring plan${customerName ? ` for ${customerName}` : ""}? Future automatic bookings will stop immediately.`
+    );
+    if (!confirmed) return;
     setCancelling(id);
-    await supabase.from("recurring_plans").update({ status: "cancelled" }).eq("id", id);
-    setPlans((prev) => prev.map((p) => p.id === id ? { ...p, status: "cancelled" } : p));
+    setSaveError("");
+    const { error } = await supabase
+      .from("recurring_plans")
+      .update({ status: "cancelled" })
+      .eq("id", id);
+    if (error) {
+      setSaveError(`Failed to cancel plan: ${error.message}`);
+    } else {
+      setPlans((prev) => prev.map((p) => p.id === id ? { ...p, status: "cancelled" } : p));
+    }
     setCancelling(null);
   };
 
@@ -144,6 +159,12 @@ export default function AdminPlans() {
       {/* ── All Plans tab ── */}
       {tab === "plans" && (
         <>
+          {saveError && (
+            <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+              <p className="text-sm text-red-700">{saveError}</p>
+            </div>
+          )}
           {fetching ? (
             <div className="flex items-center justify-center py-24">
               <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -211,7 +232,7 @@ export default function AdminPlans() {
                       <td className="px-4 py-4">
                         {plan.status !== "cancelled" && (
                           <button
-                            onClick={() => cancelPlan(plan.id)}
+                            onClick={() => cancelPlan(plan.id, plan.profiles?.full_name)}
                             disabled={cancelling === plan.id}
                             title="Cancel plan"
                             className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-40"

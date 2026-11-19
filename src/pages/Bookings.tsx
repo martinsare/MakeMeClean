@@ -8,6 +8,7 @@ import {
   formatDate,
   formatCurrency,
   isActiveUpcomingBooking,
+  isBookingStartTimePassed,
   isPastDate,
 } from "@/lib/utils";
 import Pagination from "@/components/Pagination";
@@ -90,7 +91,7 @@ export default function Bookings() {
         b.status === "cancelled" ||
         (b.status === "upcoming" &&
           b.payment_status !== "paid" &&
-          isPastDate(b.date))
+          isBookingStartTimePassed(b.date, b.time_slot))
     ).length,
   };
 
@@ -110,7 +111,7 @@ export default function Bookings() {
           b.status === "cancelled" ||
           (b.status === "upcoming" &&
             b.payment_status !== "paid" &&
-            isPastDate(b.date))
+            isBookingStartTimePassed(b.date, b.time_slot))
         );
       return b.status === filter;
     })

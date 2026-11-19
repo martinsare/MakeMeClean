@@ -1,39 +1,37 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
   MapPin,
   Hand,
   CheckCircle2,
-  Navigation,
-  Info,
   CalendarCheck,
-  ChevronRight,
-  ShieldAlert,
   Home,
   CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { UK_NLW_2026 } from "@/lib/payroll";
+import { getServiceBookingConfig } from "@/lib/serviceBookingConfigs";
 
 interface OpenShift {
   id: string;
   booking_id: string;
   service_name: string;
-  customer_name: string;
-  address: string;
   city: string;
-  postcode: string;
+  outward_postcode: string;
   date: string;
   time_slot: string;
   pay_amount: number;
+  hourly_rate: number;
   estimated_hours: number;
   bedrooms?: number;
   bathrooms?: number;
   living_rooms?: number;
   property_type?: string;
   extras?: string[];
-  notes?: string;
+  already_applied?: boolean;
 }
 
 export default function StaffShiftMarketplace({
@@ -49,98 +47,57 @@ export default function StaffShiftMarketplace({
   const [modalShift, setModalShift] = useState<OpenShift | null>(null);
   const [noteText, setNoteText] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const fetchOpenShifts = async () => {
     setLoading(true);
+    setErrorMsg("");
     try {
-      // 1. Fetch unassigned upcoming customer bookings
-      const { data: bookings } = await supabase
-        .from("bookings")
-        .select(
-          "id, service_name, customer_name, address, city, postcode, date, time_slot, price, duration_hours, notes, bedrooms, bathrooms, living_rooms, property_type, extras"
-        )
-        .is("assigned_staff_id", null)
-        .neq("status", "cancelled")
-        .gte("date", new Date().toISOString().split("T")[0])
-        .order("date", { ascending: true })
-        .limit(20);
+      // Fetch redacted open paid shifts via SECURITY DEFINER RPC (active staff only — no street addresses/lockbox notes)
+      const [
+        { data: openRows, error: shiftsErr },
+        { data: myApps },
+      ] = await Promise.all([
+        supabase.rpc("get_open_marketplace_shifts"),
+        supabase
+          .from("shift_applications")
+          .select("booking_id")
+          .eq("cleaner_id", staffId),
+      ]);
 
-      if (bookings && bookings.length > 0) {
-        setShifts(
-          bookings.map((b: any) => ({
+      if (shiftsErr) {
+        setShifts([]);
+        return;
+      }
+
+      const appliedIds = new Set((myApps || []).map((a: any) => a.booking_id));
+
+      setShifts(
+        ((openRows as any[]) || []).map((b: any) => {
+          const hours = Number(b.duration_hours || 2);
+          const hourlyRate = Number(b.hourly_rate) || UK_NLW_2026;
+          return {
             id: `shift_${b.id}`,
             booking_id: b.id,
-            service_name: b.service_name || "General Clean",
-            customer_name: b.customer_name || "Client",
-            address: b.address || "",
-            city: b.city || "Cardiff",
-            postcode: b.postcode || "",
+            service_name: b.service_name || "Cleaning Service",
+            city: b.city || "Wales",
+            outward_postcode: String(b.outward_postcode || "").trim(),
             date: b.date,
-            time_slot: b.time_slot || "09:00 AM",
-            pay_amount: Number(b.price || 45) * 0.7, // 70% cleaner split
-            estimated_hours: Number(b.duration_hours || 3),
+            time_slot: b.time_slot || "09:00 - 11:00",
+            hourly_rate: hourlyRate,
+            pay_amount: Math.round(hourlyRate * hours * 100) / 100,
+            estimated_hours: hours,
             bedrooms: b.bedrooms ?? 1,
             bathrooms: b.bathrooms ?? 1,
             living_rooms: b.living_rooms ?? 1,
             property_type: b.property_type || "House/Flat",
             extras: Array.isArray(b.extras) ? b.extras : [],
-            notes: b.notes,
-          }))
-        );
-      } else {
-        // Fallback slots
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const dayAfter = new Date();
-        dayAfter.setDate(dayAfter.getDate() + 2);
-
-        setShifts([
-          {
-            id: "shift_demo_1",
-            booking_id: "book_101",
-            service_name: "Deep Clean & Sanitization",
-            customer_name: "Sarah Jenkins",
-            address: "42 Newport Road",
-            city: "Cardiff",
-            postcode: "CF24 0AB",
-            date: tomorrow.toISOString().split("T")[0],
-            time_slot: "09:00 AM - 12:30 PM",
-            pay_amount: 52.5,
-            estimated_hours: 3.5,
-            bedrooms: 2,
-            bathrooms: 2,
-            living_rooms: 1,
-            property_type: "Flat / Apartment",
-            extras: ["Inside Oven & Grill", "Inside Fridge / Freezer"],
-            notes: "Key is in lockbox by front door. Code: 4921",
-          },
-          {
-            id: "shift_demo_2",
-            booking_id: "book_102",
-            service_name: "End of Tenancy Full Clean",
-            customer_name: "David Evans",
-            address: "15 Marina Mews",
-            city: "Swansea",
-            postcode: "SA1 1WG",
-            date: dayAfter.toISOString().split("T")[0],
-            time_slot: "01:00 PM - 05:00 PM",
-            pay_amount: 68.0,
-            estimated_hours: 4.0,
-            bedrooms: 3,
-            bathrooms: 2,
-            living_rooms: 1,
-            property_type: "House",
-            extras: [
-              "Inside Oven & Grill",
-              "Interior Window Glass",
-              "Inside Kitchen Cabinets",
-            ],
-            notes: "Empty flat. Oven and interior windows included.",
-          },
-        ]);
-      }
-    } catch (_) {
-      // Handled gracefully in UI
+            already_applied: appliedIds.has(b.id),
+          };
+        })
+      );
+    } catch {
+      setShifts([]);
     } finally {
       setLoading(false);
     }
@@ -148,29 +105,41 @@ export default function StaffShiftMarketplace({
 
   useEffect(() => {
     fetchOpenShifts();
-  }, []);
+  }, [staffId]);
 
   const handleClaim = async () => {
     if (!modalShift) return;
     setClaimingId(modalShift.id);
+    setErrorMsg("");
 
     try {
-      await supabase.from("shift_applications").insert({
+      const { error } = await supabase.from("shift_applications").insert({
         shift_id: modalShift.id,
         booking_id: modalShift.booking_id,
         cleaner_id: staffId,
         status: "pending",
-        cleaner_notes: noteText,
-        created_at: new Date().toISOString(),
+        cleaner_notes: noteText.trim() || null,
       });
-      setSuccessMsg("Shift claimed successfully! Awaiting admin confirmation.");
+
+      if (error) {
+        if (error.code === "23505") {
+          setErrorMsg("You have already applied for this shift.");
+        } else {
+          setErrorMsg(error.message || "Failed to apply for shift. Please try again.");
+        }
+        return;
+      }
+
+      setSuccessMsg("Application submitted! Awaiting admin assignment confirmation.");
+      setNoteText("");
       setTimeout(() => {
         setSuccessMsg("");
         setModalShift(null);
+        fetchOpenShifts();
         if (onClaimed) onClaimed();
-      }, 2000);
-    } catch (_) {
-      alert("Failed to claim shift. Please try again.");
+      }, 1600);
+    } catch {
+      setErrorMsg("Failed to apply for shift. Please try again.");
     } finally {
       setClaimingId(null);
     }
@@ -186,8 +155,7 @@ export default function StaffShiftMarketplace({
           </span>
           <h2 className="text-xl font-black mt-2">Available Customer Cleans</h2>
           <p className="text-xs text-green-100 max-w-md mt-1">
-            Pick up flexible open cleaning slots in your area. Shifts are
-            awarded instantly on a first-come basis.
+            Apply for open, paid shifts in your area. Full address and entry instructions are shared once an admin confirms your assignment.
           </p>
         </div>
         <div className="hidden sm:flex w-12 h-12 bg-white/10 rounded-2xl items-center justify-center">
@@ -210,7 +178,7 @@ export default function StaffShiftMarketplace({
             No Open Shifts Right Now
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            All customer cleans are currently assigned. Check back frequently!
+            All upcoming paid customer cleans are currently assigned. Check back soon!
           </p>
         </div>
       ) : (
@@ -235,7 +203,7 @@ export default function StaffShiftMarketplace({
                       {formatCurrency(s.pay_amount)}
                     </p>
                     <p className="text-xs text-gray-400 font-medium">
-                      Cleaner Pay
+                      Est. Pay ({formatCurrency(s.hourly_rate)}/hr)
                     </p>
                   </div>
                 </div>
@@ -253,16 +221,19 @@ export default function StaffShiftMarketplace({
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-gray-400" />
                     <span>
-                      {s.address ? `${s.address}, ` : ""}
-                      {s.city} ({s.postcode})
+                      {s.city}
+                      {s.outward_postcode ? ` (${s.outward_postcode} area)` : ""} — Full address revealed on assignment
                     </span>
                   </div>
                   <div className="flex items-center gap-2 font-medium text-gray-700">
                     <Home className="w-4 h-4 text-green-600" />
                     <span>
-                      {s.bedrooms ?? 1} Bed · {s.bathrooms ?? 1} Bath ·{" "}
-                      {s.living_rooms ?? 1} Living (
-                      {s.property_type || "House/Flat"})
+                      {getServiceBookingConfig(s.service_name).formatLayout(
+                        s.bedrooms,
+                        s.bathrooms,
+                        s.living_rooms,
+                        s.property_type
+                      )}
                     </span>
                   </div>
                   {s.extras && s.extras.length > 0 && (
@@ -271,21 +242,20 @@ export default function StaffShiftMarketplace({
                       <span>Add-ons: {s.extras.join(", ")}</span>
                     </div>
                   )}
-                  {s.notes && (
-                    <div className="flex items-start gap-2 pt-1 border-t border-gray-200/60 text-gray-500">
-                      <Info className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
-                      <span>{s.notes}</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
               <button
-                onClick={() => setModalShift(s)}
-                className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-sm"
+                onClick={() => {
+                  setErrorMsg("");
+                  setSuccessMsg("");
+                  setModalShift(s);
+                }}
+                disabled={s.already_applied}
+                className="w-full py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-500 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-sm disabled:cursor-not-allowed"
               >
                 <Hand className="w-4 h-4" />
-                Claim This Shift
+                {s.already_applied ? "Application Pending" : "Apply for This Shift"}
               </button>
             </div>
           ))}
@@ -312,17 +282,21 @@ export default function StaffShiftMarketplace({
 
             <div className="bg-gray-50 p-4 rounded-xl space-y-2 text-xs text-gray-700 mb-4">
               <p>
-                <strong>Location:</strong> {modalShift.city} (
-                {modalShift.postcode})
+                <strong>Area:</strong> {modalShift.city}
+                {modalShift.outward_postcode ? ` (${modalShift.outward_postcode})` : ""}
               </p>
               <p>
                 <strong>Schedule:</strong> {formatDate(modalShift.date)} at{" "}
                 {modalShift.time_slot}
               </p>
               <p>
-                <strong>Property:</strong> {modalShift.bedrooms ?? 1} Bed ·{" "}
-                {modalShift.bathrooms ?? 1} Bath (
-                {modalShift.property_type || "House/Flat"})
+                <strong>Scope:</strong>{" "}
+                {getServiceBookingConfig(modalShift.service_name).formatLayout(
+                  modalShift.bedrooms,
+                  modalShift.bathrooms,
+                  modalShift.living_rooms,
+                  modalShift.property_type
+                )}
               </p>
               {modalShift.extras && modalShift.extras.length > 0 && (
                 <p className="text-green-800 font-semibold">
@@ -330,8 +304,8 @@ export default function StaffShiftMarketplace({
                 </p>
               )}
               <p className="text-green-700 font-bold text-sm">
-                <strong>Pay:</strong> {formatCurrency(modalShift.pay_amount)} (
-                {modalShift.estimated_hours} hrs)
+                <strong>Est. Pay:</strong> {formatCurrency(modalShift.pay_amount)} (
+                {modalShift.estimated_hours} hrs @ {formatCurrency(modalShift.hourly_rate)}/hr)
               </p>
             </div>
 
@@ -343,17 +317,24 @@ export default function StaffShiftMarketplace({
                 rows={2}
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
-                placeholder="e.g. I live 5 mins away, ready to start promptly."
+                placeholder="e.g. I live nearby and am ready to start promptly."
                 className="w-full text-xs border border-gray-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
               />
             </div>
 
-            {successMsg ? (
+            {errorMsg && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold p-3 rounded-xl flex items-center gap-2 mb-4">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                {errorMsg}
+              </div>
+            )}
+
+            {successMsg && (
               <div className="bg-green-50 border border-green-200 text-green-700 text-xs font-bold p-3 rounded-xl flex items-center gap-2 mb-4">
                 <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
                 {successMsg}
               </div>
-            ) : null}
+            )}
 
             <div className="flex gap-2">
               <button

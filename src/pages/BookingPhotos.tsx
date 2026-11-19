@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { Upload, X, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -9,10 +9,12 @@ interface Photo {
   id: string;
   storage_path: string;
   uploaded_at: string;
+  signedUrl?: string;
 }
 
 export default function BookingPhotos() {
   const { user, loading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
   const params = useParams<{ bookingId: string }>();
   const bookingId = params.bookingId;
 
@@ -29,15 +31,32 @@ export default function BookingPhotos() {
       .from("booking_photos")
       .select("id, storage_path, uploaded_at")
       .eq("booking_id", bookingId)
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .order("uploaded_at", { ascending: false });
 
-    if (!err) setPhotos(data ?? []);
+    if (!err && data) {
+      const withUrls = await Promise.all(
+        data.map(async (p) => {
+          const { data: signed } = await supabase.storage
+            .from("booking-photos")
+            .createSignedUrl(p.storage_path, 3600);
+          return { ...p, signedUrl: signed?.signedUrl ?? "" };
+        })
+      );
+      setPhotos(withUrls);
+    }
     setFetching(false);
   };
 
   useEffect(() => {
-    if (!authLoading && user) fetchPhotos();
-  }, [bookingId, user, authLoading]);
+    if (authLoading) return;
+    if (!user) {
+      setFetching(false);
+      setLocation("/login");
+      return;
+    }
+    fetchPhotos();
+  }, [bookingId, user, authLoading, setLocation]);
 
   const uploadPhoto = async (file: File) => {
     if (!bookingId || !user) return;
@@ -82,10 +101,15 @@ export default function BookingPhotos() {
   };
 
   const deletePhoto = async (photoId: string, path: string) => {
+    if (!user) return;
     setDeleting(photoId);
     try {
       await supabase.storage.from("booking-photos").remove([path]);
-      await supabase.from("booking_photos").delete().eq("id", photoId);
+      await supabase
+        .from("booking_photos")
+        .delete()
+        .eq("id", photoId)
+        .eq("user_id", user.id);
       await fetchPhotos();
     } catch (e) {
       setError((e as Error).message || "Failed to delete photo");
@@ -94,12 +118,7 @@ export default function BookingPhotos() {
     }
   };
 
-  const getPhotoUrl = (path: string) => {
-    const { data } = supabase.storage.from("booking-photos").getPublicUrl(path);
-    return data.publicUrl;
-  };
-
-  if (authLoading) return null;
+  if (authLoading || !user) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
@@ -167,9 +186,9 @@ export default function BookingPhotos() {
             {photos.map((photo) => (
               <div key={photo.id} className="relative group bg-white rounded-2xl overflow-hidden shadow-sm">
                 <img
-                  src={getPhotoUrl(photo.storage_path)}
+                  src={photo.signedUrl || ""}
                   alt="Booking photo"
-                  className="w-full h-48 object-cover"
+                  className="w-full h-48 object-cover bg-gray-100"
                 />
                 <button
                   onClick={() => deletePhoto(photo.id, photo.storage_path)}

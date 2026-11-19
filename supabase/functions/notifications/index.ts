@@ -31,14 +31,24 @@ function mustGetEnv(name: string) {
   return value;
 }
 
+function constantTimeEquals(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 function requireInternalRequest(req: Request) {
   const expected = Deno.env.get("NOTIFICATIONS_INTERNAL_TOKEN");
   if (!expected) throw new Error("Missing env var: NOTIFICATIONS_INTERNAL_TOKEN");
   const provided = req.headers.get("x-internal-token") ?? "";
-  if (provided !== expected) {
-    return false;
-  }
-  return true;
+  return constantTimeEquals(provided, expected);
+}
+
+function escapeTelegram(value: string) {
+  return String(value ?? "").replace(/([_*`\[])/g, "\\$1");
 }
 
 function escapeHtml(value: string) {
@@ -272,7 +282,8 @@ async function sendTelegram(event: NotificationEvent, booking: any, customerEmai
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
   if (!token || !chatId) return;
 
-  const invoice = booking.invoice_number ?? booking.id;
+  const siteUrl = (Deno.env.get("SITE_URL") ?? "https://makemeclean.co.uk").replace(/\/$/, "");
+  const invoice = String(booking.invoice_number ?? booking.id).replaceAll("`", "");
   const title =
     event.type === "payment_receipt"
       ? "✅ Payment Received (Booking Confirmed)"
@@ -284,41 +295,54 @@ async function sendTelegram(event: NotificationEvent, booking: any, customerEmai
   if (Array.isArray(booking.extras)) extrasList = booking.extras.map((x: any) => String(x));
   const extrasText = extrasList.length > 0 ? extrasList.join(", ") : "None";
 
-  const accessLabel = booking.access_method === "home" ? "Customer at home" : booking.access_method === "key_safe" ? "Key safe / Lockbox" : booking.access_method === "concierge" ? "Concierge" : booking.access_method === "hidden_key" ? "Hidden key" : (booking.access_method || "Customer at home");
+  const accessLabel =
+    booking.access_method === "home"
+      ? "Customer at home"
+      : booking.access_method === "key_safe"
+        ? "Key safe / Lockbox"
+        : booking.access_method === "concierge"
+          ? "Concierge"
+          : booking.access_method === "hidden_key"
+            ? "Hidden key"
+            : String(booking.access_method || "Customer at home");
   const suppliesLabel = booking.supplies_option === "customer" ? "Customer provides supplies" : "Cleaner brings eco supplies";
-  const parkingLabel = booking.parking_option === "paid" ? "Paid parking meter nearby" : booking.parking_option === "none" ? "No parking (public transport only)" : "Free on-street/driveway";
+  const parkingLabel =
+    booking.parking_option === "paid"
+      ? "Paid parking meter nearby"
+      : booking.parking_option === "none"
+        ? "No parking (public transport only)"
+        : "Free on-street/driveway";
   const petsLabel = booking.has_pets ? "Yes 🐾" : "No";
+  const postcodeOutward = booking.postcode ? String(booking.postcode).trim().split(/\s+/)[0] : "";
 
+  // Redact street address and lockbox/entry notes from non-E2EE Telegram notifications.
   const lines = [
-    `*${title}*`,
+    `*${escapeTelegram(title)}*`,
     "",
-    `*Service:* ${booking.service_name ?? "Cleaning"}`,
-    `*Date:* ${booking.date ?? ""}`,
-    booking.time_slot ? `*Time:* ${booking.time_slot}` : null,
-    booking.price != null ? `*Amount:* ${formatGBP(Number(booking.price))}` : null,
+    `*Service:* ${escapeTelegram(booking.service_name ?? "Cleaning")}`,
+    `*Date:* ${escapeTelegram(booking.date ?? "")}`,
+    booking.time_slot ? `*Time:* ${escapeTelegram(booking.time_slot)}` : null,
+    booking.price != null ? `*Amount:* ${escapeTelegram(formatGBP(Number(booking.price)))}` : null,
     invoice ? `*Invoice:* \`${invoice}\`` : null,
     "",
-    `👤 *Customer Information:*`,
-    customerName ? `*Name:* ${customerName}` : null,
-    `*Email:* ${customerEmail}`,
-    customerPhone ? `*Phone:* ${customerPhone}` : null,
+    `👤 *Customer:*`,
+    customerName ? `*Name:* ${escapeTelegram(customerName)}` : null,
+    `*Email:* ${escapeTelegram(customerEmail)}`,
+    customerPhone ? `*Phone:* ${escapeTelegram(customerPhone)}` : null,
     "",
-    `📍 *Property & Location:*`,
-    `*Property:* ${booking.bedrooms || 1} Bed · ${booking.bathrooms || 1} Bath · ${booking.living_rooms || 1} Living (${booking.property_type || "House/Flat"})`,
-    `*Duration:* ${booking.duration_hours || 2}h`,
-    booking.address ? `*Address:* ${booking.address}` : null,
-    booking.city ? `*City:* ${booking.city}` : null,
-    booking.postcode ? `*Postcode:* ${booking.postcode}` : null,
+    `📍 *Property Summary:*`,
+    `*Property:* ${escapeTelegram(`${booking.bedrooms || 1} Bed · ${booking.bathrooms || 1} Bath · ${booking.living_rooms || 1} Living (${booking.property_type || "House/Flat"})`)}`,
+    `*Duration:* ${escapeTelegram(`${booking.duration_hours || 2}h`)}`,
+    booking.city ? `*Area:* ${escapeTelegram(booking.city)}${postcodeOutward ? ` (${escapeTelegram(postcodeOutward)})` : ""}` : null,
+    `*Access:* ${escapeTelegram(accessLabel)}`,
+    `*Supplies:* ${escapeTelegram(suppliesLabel)}`,
+    `*Parking:* ${escapeTelegram(parkingLabel)}`,
+    `*Pets:* ${escapeTelegram(petsLabel)}`,
+    `*Add-Ons:* ${escapeTelegram(extrasText)}`,
+    booking.notes && String(booking.notes).trim() ? `_Special notes attached — view securely in Admin Portal_` : null,
     "",
-    `⚙️ *Access & Instructions:*`,
-    `*Access:* ${accessLabel}`,
-    `*Supplies:* ${suppliesLabel}`,
-    `*Parking:* ${parkingLabel}`,
-    `*Pets:* ${petsLabel}`,
-    `*Add-Ons:* ${extrasText}`,
-    booking.notes && String(booking.notes).trim() ? `*Special Notes:* "${String(booking.notes).trim()}"` : null,
-    "",
-    `*Booking ID:* \`${booking.id}\``,
+    `*Booking ID:* \`${String(booking.id).replaceAll("`", "")}\``,
+    `Admin Portal: ${siteUrl}/admin`,
   ].filter(Boolean);
 
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

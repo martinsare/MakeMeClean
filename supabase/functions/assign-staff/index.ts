@@ -1,21 +1,35 @@
 // Supabase Edge Function: assign-staff
-// Admin-only: assigns a staff member to a booking and emails them the shift details.
+// Admin-only: validates booking payment/status, checks staff active status & time-slot
+// overlap conflicts, assigns atomically, and emails the cleaner shift details.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-function corsHeaders() {
-  const origin = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+function corsHeaders(req?: Request) {
+  const configured = Deno.env.get("ALLOWED_ORIGIN");
+  const reqOrigin = req?.headers.get("Origin") ?? "";
+  let allowOrigin = configured || "https://makemeclean.co.uk";
+  if (
+    reqOrigin &&
+    (reqOrigin === "https://makemeclean.co.uk" ||
+      reqOrigin === "https://www.makemeclean.co.uk" ||
+      reqOrigin.startsWith("http://localhost:") ||
+      reqOrigin.startsWith("http://127.0.0.1:") ||
+      (configured && reqOrigin === configured))
+  ) {
+    allowOrigin = reqOrigin;
+  }
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
   };
 }
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
 
@@ -36,12 +50,36 @@ function escapeHtml(s: string) {
 
 function formatDate(raw: string) {
   try {
-    return new Date(raw).toLocaleDateString("en-GB", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    return new Date(`${raw}T00:00:00`).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
   } catch {
     return raw;
   }
+}
+
+function parseSlotRangeMinutes(timeSlot: string | null | undefined, durationHours?: number | null): [number, number] {
+  const parts = String(timeSlot || "09:00 - 11:00")
+    .split(/[-–]/)
+    .map((p) => p.trim());
+  const [sh, sm] = (parts[0] || "09:00").split(":").map(Number);
+  const start = (Number.isFinite(sh) ? sh : 9) * 60 + (Number.isFinite(sm) ? sm : 0);
+  if (parts.length >= 2 && parts[1]) {
+    const [eh, em] = parts[1].split(":").map(Number);
+    if (Number.isFinite(eh)) {
+      const end = eh * 60 + (Number.isFinite(em) ? em : 0);
+      if (end > start) return [start, end];
+    }
+  }
+  const durMins = Math.round((Number(durationHours) || 2) * 60);
+  return [start, start + durMins];
+}
+
+function slotsOverlap(a: [number, number], b: [number, number]): boolean {
+  return a[0] < b[1] && b[0] < a[1];
 }
 
 function buildAssignmentEmail(args: {
@@ -63,7 +101,6 @@ function buildAssignmentEmail(args: {
   const bg = "#f6f7fb";
   const border = "#e5e7eb";
   const divider = "#eef2f7";
-
   const safe = (v: string | null | undefined) => escapeHtml(String(v ?? ""));
 
   const row = (label: string, value: string) => `
@@ -79,42 +116,28 @@ function buildAssignmentEmail(args: {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="x-apple-disable-message-reformatting" />
     <title>Shift assignment — MakeMeClean</title>
   </head>
   <body style="margin:0;padding:0;background:${bg}">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">
-      You have been assigned a new cleaning shift on ${safe(formatDate(args.date))}.
-    </div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px">
       <tr><td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
                style="max-width:640px;background:#ffffff;border:1px solid ${border};border-radius:20px;overflow:hidden">
-
-          <!-- Header -->
           <tr><td style="padding:22px 22px 16px;border-bottom:1px solid ${divider}">
             <p style="margin:0;font-family:${font};font-weight:900;font-size:22px;color:#111827">MakeMe<span style="color:#16a34a">Clean</span></p>
             <p style="margin:6px 0 0;font-family:${font};font-weight:600;font-size:12px;color:#6b7280">Shift assignment notification</p>
           </td></tr>
-
-          <!-- Body -->
           <tr><td style="padding:20px 22px;font-family:${font}">
-            <h2 style="margin:0 0 10px;font-weight:900;font-size:18px;color:#111827">
-              You have been assigned a shift
-            </h2>
+            <h2 style="margin:0 0 10px;font-weight:900;font-size:18px;color:#111827">You have been assigned a shift</h2>
             <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#374151">
               Dear ${safe(args.staffFirstName)},<br /><br />
-              You have been assigned to the following cleaning job. Please review the details below
-              and make sure you are available on the scheduled date. Log in to your staff portal
-              to view your full schedule.
+              You have been assigned to the following cleaning job. Please log in to your staff portal to accept the shift and view full access instructions.
             </p>
-
-            <!-- Shift details panel -->
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
                    style="border:1px solid ${border};border-radius:16px;overflow:hidden">
               <tr>
-                <td colspan="2" style="background:#f9fafb;padding:12px 14px;font-family:${font};font-weight:800;font-size:12px;line-height:1.4;color:#111827;text-transform:uppercase;letter-spacing:.05em">
-                  Shift details & property specs
+                <td colspan="2" style="background:#f9fafb;padding:12px 14px;font-family:${font};font-weight:800;font-size:12px;color:#111827;text-transform:uppercase;letter-spacing:.05em">
+                  Shift details
                 </td>
               </tr>
               ${row("Service", safe(args.serviceName))}
@@ -127,43 +150,18 @@ function buildAssignmentEmail(args: {
               ${row("City", safe(args.city))}
               ${row("Postcode", safe(args.postcode))}
               ${args.customerName ? row("Customer", safe(args.customerName)) : ""}
-              ${args.notes ? row("Entry Notes", safe(args.notes)) : ""}
             </table>
-
-            <!-- Important notice -->
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-                   style="margin-top:16px;border:1px solid #fde68a;border-radius:16px;overflow:hidden;background:#fffbeb">
-              <tr>
-                <td style="padding:12px 16px;font-family:${font};font-size:13px;line-height:1.6;color:#92400e;font-weight:600">
-                  ⚠ Please ensure you arrive on time. If you are unable to attend,
-                  contact us immediately so we can make alternative arrangements.
-                </td>
-              </tr>
-            </table>
-
-            <!-- CTA -->
             <p style="margin:20px 0 0">
               <a href="${safe(args.portalUrl)}"
                  style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-family:${font};font-weight:900;font-size:14px;line-height:1;padding:12px 20px;border-radius:12px">
                 View my shifts
               </a>
             </p>
-
             <div style="height:1px;background:${divider};margin:20px 0"></div>
             <p style="margin:0;font-size:12px;line-height:1.6;color:#6b7280;font-family:${font}">
-              Questions about this assignment? Do not reply to this email —
-              contact your manager at <a href="mailto:${safe(supportEmail)}" style="color:#16a34a">${safe(supportEmail)}</a>.
+              Questions about this assignment? Contact <a href="mailto:${safe(supportEmail)}" style="color:#16a34a">${safe(supportEmail)}</a>.
             </p>
           </td></tr>
-
-          <!-- Footer -->
-          <tr><td style="padding:14px 22px 22px">
-            <p style="margin:0;font-family:${font};font-size:12px;line-height:1.6;color:#9ca3af">
-              MakeMeClean • Wales, UK<br />
-              This message was sent to you because you are a registered member of MakeMeClean staff.
-            </p>
-          </td></tr>
-
         </table>
       </td></tr>
     </table>
@@ -172,70 +170,144 @@ function buildAssignmentEmail(args: {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders() });
-  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders(req) });
+  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" }, req);
 
   try {
     const supabaseUrl = mustGetEnv("SUPABASE_URL");
     const serviceKey = mustGetEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = mustGetEnv("ANON_KEY");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? mustGetEnv("ANON_KEY");
 
-    // Verify caller is an authenticated admin
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: authData, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorised" });
+    if (authErr || !authData?.user) return json(401, { ok: false, error: "Unauthorised" }, req);
 
     const adminClient = createClient(supabaseUrl, serviceKey);
     const { data: adminRow } = await adminClient
-      .from("admins").select("user_id").eq("user_id", authData.user.id).maybeSingle();
-    if (!adminRow) return json(403, { ok: false, error: "Forbidden" });
+      .from("admins")
+      .select("user_id")
+      .eq("user_id", authData.user.id)
+      .maybeSingle();
+    if (!adminRow) return json(403, { ok: false, error: "Forbidden" }, req);
 
-    const { bookingId, staffId } = (await req.json()) as { bookingId?: string; staffId?: string };
-    if (!bookingId) return json(400, { ok: false, error: "Missing bookingId" });
+    const { bookingId, staffId } = (await req.json()) as { bookingId?: string; staffId?: string | null };
+    if (!bookingId) return json(400, { ok: false, error: "Missing bookingId" }, req);
 
-    // Fetch booking + customer name + property layout & extras
     const { data: booking, error: bErr } = await adminClient
       .from("bookings")
-      .select("id, service_name, date, time_slot, address, city, postcode, notes, user_id, bedrooms, bathrooms, living_rooms, property_type, duration_hours, extras, profiles(full_name)")
+      .select(
+        "id, service_name, date, time_slot, address, city, postcode, notes, status, payment_status, user_id, bedrooms, bathrooms, living_rooms, property_type, duration_hours, extras, profiles(full_name)",
+      )
       .eq("id", bookingId)
       .single();
-    if (bErr || !booking) return json(404, { ok: false, error: "Booking not found" });
+    if (bErr || !booking) return json(404, { ok: false, error: "Booking not found" }, req);
 
-    // Remove any existing assignment first
-    await adminClient.from("booking_assignments").delete().eq("booking_id", bookingId);
+    // Explicit unassign
+    if (!staffId) {
+      await adminClient.from("booking_assignments").delete().eq("booking_id", bookingId);
+      return json(200, { ok: true, action: "unassigned" }, req);
+    }
 
-    // If staffId is empty, this is an unassign — we're done
-    if (!staffId) return json(200, { ok: true, action: "unassigned" });
+    // Enforce business rules server-side
+    if (booking.status !== "upcoming") {
+      return json(409, { ok: false, error: `Cannot assign staff to a ${booking.status} booking.` }, req);
+    }
+    if (booking.payment_status !== "paid") {
+      return json(409, { ok: false, error: "Staff cannot be assigned until customer payment is confirmed." }, req);
+    }
 
-    // Fetch staff record (including email)
     const { data: staffRow, error: sErr } = await adminClient
       .from("staff")
-      .select("id, first_name, last_name, email")
+      .select("id, first_name, last_name, email, active")
       .eq("id", staffId)
       .single();
-    if (sErr || !staffRow) return json(404, { ok: false, error: "Staff member not found" });
+    if (sErr || !staffRow) return json(404, { ok: false, error: "Staff member not found" }, req);
+    if (!staffRow.active) {
+      return json(409, { ok: false, error: "Cannot assign an inactive staff member." }, req);
+    }
 
-    // Save assignment
-    const { error: aErr } = await adminClient.from("booking_assignments").insert({
-      booking_id: bookingId,
-      staff_id: staffId,
-      assigned_at: new Date().toISOString(),
-      status: "assigned",
-    });
-    if (aErr) return json(500, { ok: false, error: aErr.message });
+    // Check for double-booking / overlapping shifts for this cleaner on the same date
+    const { data: existingShifts } = await adminClient
+      .from("booking_assignments")
+      .select("booking_id, bookings!inner(id, date, time_slot, duration_hours, status)")
+      .eq("staff_id", staffId)
+      .eq("bookings.date", booking.date)
+      .neq("booking_id", bookingId);
 
-    // Send email via Brevo
+    const targetRange = parseSlotRangeMinutes(booking.time_slot, booking.duration_hours);
+    for (const shift of (existingShifts ?? []) as any[]) {
+      const other = shift.bookings;
+      if (!other || other.status === "cancelled") continue;
+      const otherRange = parseSlotRangeMinutes(other.time_slot, other.duration_hours);
+      if (slotsOverlap(targetRange, otherRange)) {
+        return json(
+          409,
+          {
+            ok: false,
+            error: `${staffRow.first_name} ${staffRow.last_name} is already assigned to an overlapping shift (${other.time_slot}) on ${booking.date}.`,
+          },
+          req,
+        );
+      }
+    }
+
+    // Update existing assignment in-place or insert new (avoids losing assignment on insert failure)
+    const { data: currentAssignment } = await adminClient
+      .from("booking_assignments")
+      .select("id")
+      .eq("booking_id", bookingId)
+      .maybeSingle();
+
+    if (currentAssignment) {
+      const { error: updateErr } = await adminClient
+        .from("booking_assignments")
+        .update({
+          staff_id: staffId,
+          assigned_at: new Date().toISOString(),
+          status: "assigned",
+          acceptance_status: "pending",
+          decline_reason: null,
+        })
+        .eq("id", currentAssignment.id);
+      if (updateErr) return json(500, { ok: false, error: updateErr.message }, req);
+    } else {
+      const { error: insertErr } = await adminClient.from("booking_assignments").insert({
+        booking_id: bookingId,
+        staff_id: staffId,
+        assigned_at: new Date().toISOString(),
+        status: "assigned",
+        acceptance_status: "pending",
+      });
+      if (insertErr) return json(500, { ok: false, error: insertErr.message }, req);
+    }
+
+    // Resolve any pending Open Shifts Marketplace applications for this booking
+    try {
+      await adminClient
+        .from("shift_applications")
+        .update({ status: "approved" })
+        .eq("booking_id", bookingId)
+        .eq("cleaner_id", staffId);
+      await adminClient
+        .from("shift_applications")
+        .update({ status: "rejected" })
+        .eq("booking_id", bookingId)
+        .neq("cleaner_id", staffId)
+        .eq("status", "pending");
+    } catch (appErr) {
+      console.error("[assign-staff] shift_applications sync warning:", appErr);
+    }
+
+    // Send email notification via Brevo (entry notes kept inside authenticated staff portal, not email)
     const brevoKey = Deno.env.get("BREVO_API_KEY");
     if (brevoKey && staffRow.email) {
-      const siteUrl = (Deno.env.get("SITE_URL") ?? "").replace(/\/$/, "");
-      const portalUrl = siteUrl ? `${siteUrl}/staff` : "/staff";
+      const siteUrl = (Deno.env.get("SITE_URL") ?? "https://makemeclean.co.uk").replace(/\/$/, "");
+      const portalUrl = `${siteUrl}/staff`;
       const customerName = (booking.profiles as any)?.full_name ?? "";
-
-      let extrasList: string[] = [];
-      if (Array.isArray(booking.extras)) extrasList = booking.extras.map((x: any) => String(x));
+      const extrasList = Array.isArray(booking.extras) ? booking.extras.map((x: unknown) => String(x)) : [];
       const extrasStr = extrasList.length > 0 ? extrasList.join(", ") : "None";
       const layoutStr = `${booking.bedrooms || 1} Bed · ${booking.bathrooms || 1} Bath · ${booking.living_rooms || 1} Living (${booking.property_type || "House/Flat"})`;
 
@@ -251,7 +323,7 @@ Deno.serve(async (req) => {
         propertyLayout: layoutStr,
         extras: extrasStr,
         duration: `${booking.duration_hours || 2} Hours`,
-        notes: booking.notes,
+        notes: null,
         portalUrl,
       });
 
@@ -279,11 +351,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json(200, {
-      ok: true,
-      assignment: { bookingId, staffId, staffName: `${staffRow.first_name} ${staffRow.last_name}` },
-    });
+    return json(
+      200,
+      {
+        ok: true,
+        assignment: { bookingId, staffId, staffName: `${staffRow.first_name} ${staffRow.last_name}` },
+      },
+      req,
+    );
   } catch (e) {
-    return json(500, { ok: false, error: String((e as Error)?.message ?? e) });
+    console.error("[assign-staff]", e);
+    return json(500, { ok: false, error: "Failed to save assignment" }, req);
   }
 });

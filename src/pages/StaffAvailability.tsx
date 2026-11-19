@@ -36,7 +36,11 @@ export default function StaffAvailability() {
   useEffect(() => { if (!loading && !user) setLocation("/login"); }, [user, loading]);
 
   useEffect(() => {
-    if (!staff?.id) return;
+    if (staffLoading) return;
+    if (!staff?.id) {
+      setFetching(false);
+      return;
+    }
     supabase
       .from("staff_availability")
       .select("week_start, day_slots, notes")
@@ -53,7 +57,7 @@ export default function StaffAvailability() {
         setNotes(nMap);
         setFetching(false);
       });
-  }, [staff?.id]);
+  }, [staff?.id, staffLoading]);
 
   const getWeek  = (ws: string): WeekSlots => avail[ws] ?? { ...DEFAULT_SLOTS };
   const getNote  = (ws: string): string    => notes[ws]  ?? "";
@@ -97,6 +101,17 @@ export default function StaffAvailability() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 text-center">
+        <div className="bg-white border border-gray-100 rounded-2xl p-8 max-w-md w-full shadow-sm">
+          <p className="text-lg font-black text-gray-900 mb-1">Active staff profile required</p>
+          <p className="text-sm text-gray-500">Your account is not linked to an active staff profile.</p>
+        </div>
       </div>
     );
   }

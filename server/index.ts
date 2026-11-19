@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleCors, sendError } from './_lib/server.js';
+import {
+  handleCors,
+  sendError,
+  sendSuccess,
+  getClientIp,
+  checkServerRateLimit,
+} from './_lib/server.js';
 import { handleConfig } from './_handlers/config.js';
 import { handleServices } from './_handlers/services.js';
 import { handleSettings } from './_handlers/settings.js';
@@ -38,6 +44,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (route) {
       case 'health':
         return res.status(200).json({ status: 'ok', time: new Date().toISOString() });
+      case 'client-error': {
+        if (req.method !== 'POST') return sendError(res, 'Method not allowed', 405);
+        const ip = getClientIp(req);
+        const allowed = await checkServerRateLimit(`client_error:${ip}`, 10, 300);
+        if (!allowed) return sendError(res, 'Too many error reports', 429);
+        const body = req.body || {};
+        console.error('[Client ErrorBoundary Report]', {
+          ip,
+          url: String(body.url || '').slice(0, 300),
+          message: String(body.message || '').slice(0, 500),
+          stack: String(body.stack || '').slice(0, 1500),
+          componentStack: String(body.componentStack || '').slice(0, 1500),
+          userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+        });
+        return sendSuccess(res, { received: true });
+      }
       case 'config':
         return await handleConfig(req, res);
       case 'services':
@@ -61,13 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'notifications':
         return await handleNotifications(req, res);
       case 'staff':
-        return await handleStaff(req, res);
+        return await handleStaff(req, res, subPath);
       default:
         return sendError(res, `API route not found: /api/${path}`, 404);
     }
   } catch (err: any) {
     console.error(`[API Error] /api/${path}:`, err);
-    return sendError(res, err?.message || 'Internal server error', 500);
+    return sendError(res, 'Internal server error', 500);
   }
 }
 

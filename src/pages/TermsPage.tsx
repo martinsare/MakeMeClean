@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { FileText } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 
-const UPDATED = "1 May 2025";
+const UPDATED = "18 November 2026";
 
 const sections = [
   {
@@ -183,7 +183,7 @@ export default function TermsPage() {
           {/* Main content */}
           <div className="flex-1 min-w-0 space-y-8">
             {/* Intro box */}
-            <div className="bg-green-50 border border-green-100 rounded-2xl p-5">
+            <div className="bg-green-50 border border-green-100 rounded-2xl p-5 space-y-2">
               <p className="text-sm text-green-900 leading-relaxed">
                 Please read these Terms and Conditions carefully before using
                 our services. By booking a clean or using our website, you agree
@@ -195,6 +195,12 @@ export default function TermsPage() {
                   {settings.contact_email}
                 </a>
                 .
+              </p>
+              <p className="text-xs text-green-800/80">
+                Operator: <strong>{settings.company_legal_name || "MakeMeClean Ltd"}</strong>
+                {settings.company_reg_number ? ` · Company Reg. No: ${settings.company_reg_number}` : ""}
+                {settings.company_registered_address ? ` · ${settings.company_registered_address}` : ""}
+                {settings.vat_registered === "true" && settings.vat_number ? ` · VAT No: ${settings.vat_number}` : ""}
               </p>
             </div>
 

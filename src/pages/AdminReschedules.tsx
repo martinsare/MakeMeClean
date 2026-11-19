@@ -31,6 +31,7 @@ export default function AdminReschedules() {
   const [requests, setRequests] = useState<RescheduleRequest[]>([]);
   const [fetching, setFetching] = useState(true);
   const [actionId, setActionId]   = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
 
@@ -49,19 +50,55 @@ export default function AdminReschedules() {
   const approve = async (req: RescheduleRequest) => {
     if (!req.bookings) return;
     setActionId(req.id);
+    setActionError("");
     const newTimeSlot = calcNewTimeSlot(req.bookings.time_slot, req.requested_time);
-    await Promise.all([
-      supabase.from("bookings").update({ date: req.requested_date, time_slot: newTimeSlot }).eq("id", req.booking_id),
-      supabase.from("reschedule_requests").update({ status: "approved", admin_note: adminNotes[req.id] || null }).eq("id", req.id),
-    ]);
-    setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: "approved" } : r));
+    const { error: bkErr } = await supabase
+      .from("bookings")
+      .update({ date: req.requested_date, time_slot: newTimeSlot, reminder_sent: false })
+      .eq("id", req.booking_id);
+    if (bkErr) {
+      setActionError(`Failed to update booking schedule: ${bkErr.message}`);
+      setActionId(null);
+      return;
+    }
+    const { error: reqErr } = await supabase
+      .from("reschedule_requests")
+      .update({ status: "approved", admin_note: adminNotes[req.id] || null })
+      .eq("id", req.id);
+    if (reqErr) {
+      setActionError(`Booking updated, but failed to mark request approved: ${reqErr.message}`);
+      setActionId(null);
+      return;
+    }
+    setRequests((prev) =>
+      prev.map((r) =>
+        r.id === req.id
+          ? { ...r, status: "approved", admin_note: adminNotes[req.id] || null }
+          : r
+      )
+    );
     setActionId(null);
   };
 
   const reject = async (req: RescheduleRequest) => {
     setActionId(req.id);
-    await supabase.from("reschedule_requests").update({ status: "rejected", admin_note: adminNotes[req.id] || null }).eq("id", req.id);
-    setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: "rejected" } : r));
+    setActionError("");
+    const { error: reqErr } = await supabase
+      .from("reschedule_requests")
+      .update({ status: "rejected", admin_note: adminNotes[req.id] || null })
+      .eq("id", req.id);
+    if (reqErr) {
+      setActionError(`Failed to reject reschedule request: ${reqErr.message}`);
+      setActionId(null);
+      return;
+    }
+    setRequests((prev) =>
+      prev.map((r) =>
+        r.id === req.id
+          ? { ...r, status: "rejected", admin_note: adminNotes[req.id] || null }
+          : r
+      )
+    );
     setActionId(null);
   };
 
@@ -69,12 +106,20 @@ export default function AdminReschedules() {
   const pendingCount = requests.filter((r) => r.status === "pending").length;
 
   if (loading || roleLoading) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" /></div>;
+  if (!user || !isAdmin) return <div className="min-h-screen flex items-center justify-center text-gray-500">Access denied</div>;
 
   return (
     <AdminLayout
       title="Reschedule Requests"
       subtitle="Review and action customer reschedule requests"
     >
+      {actionError && (
+        <div className="mb-6 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       {/* Filter tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
         {(["pending", "all", "approved", "rejected"] as const).map((f) => (

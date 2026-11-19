@@ -40,11 +40,11 @@ export default function ServiceDetail() {
   }, []);
 
   const service = useMemo(() => {
-    if (!services || services.length === 0) return null;
+    if (!services || services.length === 0 || !id) return null;
     return (
       services.find((s) => s.id === id) ||
       services.find((s) => s.name.toLowerCase().replace(/\s+/g, "-") === id) ||
-      services[0]
+      null
     );
   }, [services, id]);
 

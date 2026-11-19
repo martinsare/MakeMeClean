@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { ShieldCheck } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 
-const UPDATED = "1 May 2025";
+const UPDATED = "18 November 2026";
 
 const sections = [
   {
@@ -43,10 +43,14 @@ const sections = [
     id: "sharing",
     title: "4. Who We Share Your Data With",
     content: [
-      `We do not sell your personal data. We may share it with trusted third-party service providers who process data on our behalf, including:`,
-      `Supabase Inc: our cloud database and authentication provider, used to store your account and booking data securely.`,
-      `Brevo (Sendinblue): our transactional email provider, used to send booking confirmations, invoices, and service notifications.`,
-      `Payment processors: our payment provider processes card details in compliance with PCI-DSS standards.`,
+      `We do not sell your personal data. We share it only with trusted third-party sub-processors who process data on our behalf under data processing agreements, including:`,
+      `Stripe Payments UK Ltd / Stripe Inc.: processes all payment cards, refunds, and recurring billing in compliance with PCI-DSS Level 1 standards. We never store full card numbers.`,
+      `Supabase Inc.: our cloud database, authentication, and private encrypted file storage provider used to store your account, booking records, and uploaded photos/documents.`,
+      `Brevo (Sendinblue): our transactional and marketing email provider, used to send verification codes, booking confirmations, receipts, invoices, and (where opted in) newsletters.`,
+      `Vercel Inc.: our web application and serverless API hosting provider.`,
+      `Groq Inc.: powers our optional website AI chat assistant. Messages you type into the chat widget are processed to generate responses; please avoid sharing sensitive personal details or payment card numbers in chat.`,
+      `Telegram (internal operational alerts): used to send redacted booking summary notifications (service type, date, town/outward postcode, and booking ID — excluding street addresses and key-safe/lockbox codes) to our dispatch administrators.`,
+      `Google Tag Manager / Google Analytics (only with consent): optional site analytics scripts are strictly blocked unless you explicitly accept analytics cookies via our cookie banner.`,
       `We may also disclose personal data if required by law, court order, or where necessary to protect the rights, property, or safety of MakeMeClean Ltd, our staff, or the public.`,
     ],
   },
@@ -177,9 +181,14 @@ export default function PrivacyPage() {
           </aside>
 
           <div className="flex-1 min-w-0 space-y-8">
-            <div className="bg-green-50 border border-green-100 rounded-2xl p-5">
+            <div className="bg-green-50 border border-green-100 rounded-2xl p-5 space-y-2">
               <p className="text-sm text-green-900 leading-relaxed">
-                Your privacy matters to us. This policy explains exactly what personal data MakeMeClean Ltd collects, why we collect it, and how you can exercise your rights under UK data protection law.
+                Your privacy matters to us. This policy explains exactly what personal data {settings.company_legal_name || "MakeMeClean Ltd"} collects, why we collect it, and how you can exercise your rights under UK data protection law.
+              </p>
+              <p className="text-xs text-green-800/80">
+                Data Controller: <strong>{settings.company_legal_name || "MakeMeClean Ltd"}</strong>
+                {settings.company_reg_number ? ` · Company Reg. No: ${settings.company_reg_number}` : ""}
+                {settings.company_registered_address ? ` · ${settings.company_registered_address}` : ""}
               </p>
             </div>
 

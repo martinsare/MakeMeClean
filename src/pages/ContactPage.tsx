@@ -24,7 +24,7 @@ const faqs = [
   },
   {
     q: "Can I cancel or reschedule my booking?",
-    a: "Yes. You can cancel up to 3 hours before your booking from 'My Bookings'. To reschedule, use the 'Request Reschedule' option on your booking detail page — an admin will confirm your new slot.",
+    a: "Yes. Unpaid bookings can be cancelled directly up to 3 hours before the start time from 'My Bookings'. For paid bookings, use 'Request Refund' on your booking detail page so our team can cancel and process your Stripe refund in line with our Cancellation Policy. To reschedule, use 'Request Reschedule' and an admin will confirm your new slot.",
   },
   {
     q: "Are your cleaners fully insured?",
@@ -44,7 +44,7 @@ const faqs = [
   },
   {
     q: "How does payment work?",
-    a: "Payment is taken online by card after booking. We use secure payment processing. You can also choose to pay later from your bookings page.",
+    a: "Payment is taken securely online by card or digital wallet via Stripe. You can pay immediately after booking or from your bookings page before your scheduled start time — unpaid bookings automatically expire once the start time passes.",
   },
   {
     q: "Can I set up a regular recurring clean?",
@@ -145,7 +145,7 @@ export default function ContactPage() {
                 icon: Phone,
                 label: "Phone",
                 value: settings.business_phone,
-                sub: "Mon–Sat, 8am–8pm",
+                sub: settings.business_hours || "7 days a week, 8am–8pm",
               },
               {
                 icon: Mail,
@@ -163,7 +163,7 @@ export default function ContactPage() {
                 icon: Clock,
                 label: "Working hours",
                 value: settings.business_hours,
-                sub: "Last booking accepted at 7pm",
+                sub: "Standard booking start slots 7am–5pm",
               },
             ].map(({ icon: Icon, label, value, sub }) => (
               <div

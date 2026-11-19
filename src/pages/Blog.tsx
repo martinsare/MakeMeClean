@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Calendar, ArrowRight, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -361,14 +362,18 @@ export default function Blog() {
 
   const handleNewsletterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setSubscribeMessage("Please enter a valid email address.");
+      return;
+    }
 
     setSubscribeLoading(true);
     setSubscribeMessage("");
 
     try {
       const { error } = await supabase.from("newsletter_subscriptions").insert({
-        email,
+        email: cleanEmail,
         subscribed_at: new Date().toISOString(),
       });
 
@@ -376,13 +381,13 @@ export default function Blog() {
         if (error.code === "23505") {
           setSubscribeMessage("This email is already subscribed!");
         } else {
-          setSubscribeMessage("Already subscribed!");
+          setSubscribeMessage("Could not complete subscription. Please try again.");
         }
       } else {
         setSubscribeMessage("✓ Thanks for subscribing!");
         setEmail("");
       }
-    } catch (err) {
+    } catch {
       setSubscribeMessage("Error subscribing. Please try again.");
     } finally {
       setSubscribeLoading(false);
@@ -425,9 +430,9 @@ export default function Blog() {
                   {posts[0].readTime}
                 </div>
               </div>
-              <a href={`/blog/${posts[0].slug}`} className="btn-primary inline-flex items-center gap-2 w-fit">
+              <Link href={`/blog/${posts[0].slug}`} className="btn-primary inline-flex items-center gap-2 w-fit">
                 Read Article <ArrowRight className="w-4 h-4" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -464,12 +469,12 @@ export default function Blog() {
                       {post.readTime}
                     </div>
                   </div>
-                  <a
+                  <Link
                     href={`/blog/${post.slug}`}
                     className="text-green-600 font-semibold group-hover:gap-2 inline-flex items-center gap-1 transition-all"
                   >
                     Read <ArrowRight className="w-4 h-4" />
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>

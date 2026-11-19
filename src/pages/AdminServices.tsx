@@ -95,6 +95,25 @@ export default function AdminServices() {
     setIsDeleting(true);
     setError("");
     try {
+      // Protect referential integrity: prevent hard delete if bookings or recurring plans reference this service
+      const [{ count: bookingCount }, { count: planCount }] = await Promise.all([
+        supabase
+          .from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("service_type", deletingId),
+        supabase
+          .from("recurring_plans")
+          .select("id", { count: "exact", head: true })
+          .eq("service_type", deletingId),
+      ]);
+
+      if ((bookingCount ?? 0) > 0 || (planCount ?? 0) > 0) {
+        setError(
+          `This service is linked to ${bookingCount ?? 0} booking(s) and ${planCount ?? 0} recurring plan(s). Deactivate it instead so historical records and recurring schedules remain intact.`
+        );
+        return;
+      }
+
       const { error: err } = await supabase
         .from("services")
         .delete()
@@ -105,6 +124,26 @@ export default function AdminServices() {
       await fetchServices();
     } catch (e: any) {
       setError(e?.message || "Failed to delete service");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const deactivateDeletingService = async () => {
+    if (!deletingId) return;
+    setIsDeleting(true);
+    setError("");
+    try {
+      const { error: err } = await supabase
+        .from("services")
+        .update({ active: false })
+        .eq("id", deletingId);
+      if (err) throw err;
+      setDeletingId(null);
+      setDeletingName("");
+      await fetchServices();
+    } catch (e: any) {
+      setError(e?.message || "Failed to deactivate service");
     } finally {
       setIsDeleting(false);
     }
@@ -693,22 +732,35 @@ export default function AdminServices() {
             <h3 className="text-lg font-bold text-gray-900 mb-2">
               Delete Service?
             </h3>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 mb-4">
               Are you sure you want to delete{" "}
               <span className="font-bold text-gray-900">"{deletingName}"</span>?
               This service will be permanently removed from the booking catalog
               and client pages.
             </p>
-            <div className="flex justify-end gap-3">
+            {error && (
+              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5 mb-4">
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2.5">
               <button
                 disabled={isDeleting}
                 onClick={() => {
                   setDeletingId(null);
                   setDeletingName("");
+                  setError("");
                 }}
                 className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
               >
                 Cancel
+              </button>
+              <button
+                disabled={isDeleting}
+                onClick={deactivateDeletingService}
+                className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm font-semibold hover:bg-amber-100"
+              >
+                Deactivate Instead
               </button>
               <button
                 disabled={isDeleting}

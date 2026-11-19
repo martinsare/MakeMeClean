@@ -10,6 +10,7 @@ import { useScrollLock } from "@/hooks/useScrollLock";
 import { StaffRecord } from "@/types";
 import { PAGE_SIZE } from "@/lib/constants";
 import Spinner from "@/components/Spinner";
+import { api } from "@/lib/apiClient";
 
 type Staff = StaffRecord;
 
@@ -37,9 +38,11 @@ export default function AdminStaff() {
   const [addMode, setAddMode] = useState<"applicant" | "manual">("manual");
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
-  const [tempPasswordModal, setTempPasswordModal] = useState<{
+  const [inviteModal, setInviteModal] = useState<{
     email: string;
-    pass: string;
+    inviteSent: boolean;
+    setupLink?: string;
+    message?: string;
   } | null>(null);
   const [manualForm, setManualForm] = useState({
     firstName: "",
@@ -255,10 +258,12 @@ export default function AdminStaff() {
         createLogin: true,
       });
 
-      if (data.tempPassword) {
-        setTempPasswordModal({
-          email: manualForm.email,
-          pass: data.tempPassword,
+      if (data.loginCreated) {
+        setInviteModal({
+          email: manualForm.email.trim().toLowerCase(),
+          inviteSent: Boolean(data.inviteSent),
+          setupLink: data.setupLink,
+          message: data.message,
         });
       }
 
@@ -277,11 +282,17 @@ export default function AdminStaff() {
   };
 
   const deleteStaff = async (id: string) => {
-    await supabase.from("staff").delete().eq("id", id);
-    const updated = staff.filter((s) => s.id !== id);
-    setStaff(updated);
-    setConfirmDeleteId(null);
-    await fetchApplicants(updated);
+    setError("");
+    try {
+      await api.deleteStaff(id);
+      const updated = staff.filter((s) => s.id !== id);
+      setStaff(updated);
+      setConfirmDeleteId(null);
+      await fetchApplicants(updated);
+    } catch (err: any) {
+      setError(err?.message || "Failed to remove staff member.");
+      setConfirmDeleteId(null);
+    }
   };
 
   const getCity = (s: Staff) =>
@@ -624,39 +635,54 @@ export default function AdminStaff() {
         </div>
       )}
 
-      {/* Temporary Password Modal for Direct Staff Creation */}
-      {tempPasswordModal && (
+      {/* Staff Portal Invitation Modal */}
+      {inviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Staff Login Created!
+              {inviteModal.inviteSent
+                ? "Staff Invitation Sent!"
+                : "Staff Portal Account Ready"}
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              A staff login account was created for{" "}
-              <strong>{tempPasswordModal.email}</strong>. Please provide them
-              with these temporary credentials:
+              {inviteModal.inviteSent ? (
+                <>
+                  A secure one-time password setup link has been emailed to{" "}
+                  <strong>{inviteModal.email}</strong>.
+                </>
+              ) : (
+                inviteModal.message || (
+                  <>
+                    Portal access has been created for{" "}
+                    <strong>{inviteModal.email}</strong>.
+                  </>
+                )
+              )}
             </p>
-            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 font-mono text-sm mb-5 space-y-1">
-              <div>
-                <span className="text-gray-500">Email:</span>{" "}
-                <span className="text-gray-900 font-bold">
-                  {tempPasswordModal.email}
-                </span>
+            {inviteModal.setupLink && (
+              <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 mb-4 space-y-2">
+                <p className="text-xs font-semibold text-gray-600">
+                  One-time password setup link (share securely):
+                </p>
+                <p className="text-xs font-mono text-green-700 break-all select-all">
+                  {inviteModal.setupLink}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(inviteModal.setupLink!)}
+                  className="text-xs font-bold text-green-700 hover:underline"
+                >
+                  Copy setup link
+                </button>
               </div>
-              <div>
-                <span className="text-gray-500">Temp Password:</span>{" "}
-                <span className="text-green-700 font-bold">
-                  {tempPasswordModal.pass}
-                </span>
-              </div>
-            </div>
+            )}
             <p className="text-xs text-gray-500 mb-6">
-              They will be prompted to change this temporary password upon their
-              first login.
+              For security, passwords are never emailed or displayed in plaintext.
+              Staff can always use &ldquo;Forgot password&rdquo; if a link expires.
             </p>
             <button
-              onClick={() => setTempPasswordModal(null)}
+              onClick={() => setInviteModal(null)}
               className="w-full py-2.5 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700"
             >
               Done & Close

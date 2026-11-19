@@ -571,7 +571,7 @@ export default function Careers() {
       };
       await Promise.all([
         supabase.from("profiles").upsert({ id: user.id, ...contactPatch }, { onConflict: "id" }),
-        supabase.from("staff").update({ phone: contactPatch.phone, address: contactPatch.address, city: contactPatch.city, postcode: contactPatch.postcode }).eq("user_id", user.id),
+        supabase.from("staff").update({ phone: contactPatch.phone, city: contactPatch.city, postcode: contactPatch.postcode }).eq("user_id", user.id),
       ]);
 
       clearDraft(form.email);

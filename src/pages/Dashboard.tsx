@@ -33,6 +33,12 @@ export default function Dashboard() {
   const settings = useSettings();
   const loyaltyEnabled = settings.loyalty_enabled === "true";
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [counts, setCounts] = useState<{
+    total: number;
+    upcoming: number;
+    completed: number;
+    cancelled: number;
+  } | null>(null);
   const [serviceImages, setServiceImages] = useState<Record<string, string>>(
     {}
   );
@@ -48,16 +54,27 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    api
-      .getDashboard()
-      .then((data) => {
+    Promise.all([
+      api.getDashboard(),
+      supabase.from("reviews").select("booking_id").eq("user_id", user.id),
+    ])
+      .then(([data, { data: rData }]) => {
         setBookings((data.recent_bookings as any) ?? []);
+        if (data.counts) {
+          setCounts({
+            total: Number(data.counts.total ?? 0),
+            upcoming: Number(data.counts.upcoming ?? 0),
+            completed: Number(data.counts.completed ?? 0),
+            cancelled: Number(data.counts.cancelled ?? 0),
+          });
+        }
         setProfile(data.profile);
         const imgMap: Record<string, string> = {};
         for (const svc of data.services ?? []) {
           if (svc.image_url) imgMap[svc.id] = svc.image_url;
         }
         setServiceImages(imgMap);
+        setReviewedIds(new Set((rData ?? []).map((r: any) => r.booking_id)));
         setFetchingData(false);
       })
       .catch(() => {
@@ -73,11 +90,18 @@ export default function Dashboard() {
     );
   }
 
-  const upcoming = bookings.filter((b) =>
-    isActiveUpcomingBooking(b.status, b.date)
-  ).length;
-  const completed = bookings.filter((b) => b.status === "completed").length;
-  const cancelled = bookings.filter((b) => b.status === "cancelled").length;
+  const totalCount = counts?.total ?? bookings.length;
+  const upcoming =
+    counts?.upcoming ??
+    bookings.filter((b) =>
+      isActiveUpcomingBooking(b.status, b.date, b.time_slot, b.payment_status)
+    ).length;
+  const completed =
+    counts?.completed ??
+    bookings.filter((b) => b.status === "completed").length;
+  const cancelled =
+    counts?.cancelled ??
+    bookings.filter((b) => b.status === "cancelled").length;
   const displayName =
     profile?.full_name || user?.email?.split("@")[0] || "there";
   const initial = (profile?.full_name || user?.email || "U")[0].toUpperCase();
@@ -106,7 +130,7 @@ export default function Dashboard() {
         {/* Stat cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Total", value: bookings.length, color: "text-gray-900" },
+            { label: "Total", value: totalCount, color: "text-gray-900" },
             { label: "Upcoming", value: upcoming, color: "text-blue-600" },
             { label: "Completed", value: completed, color: "text-emerald-600" },
             { label: "Cancelled", value: cancelled, color: "text-red-500" },
@@ -261,7 +285,7 @@ export default function Dashboard() {
                     <span
                       className={cn(
                         "text-xs font-semibold px-2 py-0.5 rounded-full",
-                        isActiveUpcomingBooking(b.status, b.date) &&
+                        isActiveUpcomingBooking(b.status, b.date, b.time_slot, b.payment_status) &&
                           b.payment_status !== "paid"
                           ? "bg-amber-100 text-amber-700"
                           : BOOKING_STATUS_STYLES[b.status] ??
@@ -270,7 +294,7 @@ export default function Dashboard() {
                     >
                       {isPastDate(b.date) && b.status === "upcoming"
                         ? "Past"
-                        : isActiveUpcomingBooking(b.status, b.date) &&
+                        : isActiveUpcomingBooking(b.status, b.date, b.time_slot, b.payment_status) &&
                             b.payment_status !== "paid"
                         ? "Payment Pending"
                         : b.status}

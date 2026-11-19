@@ -82,8 +82,12 @@ export default function AIChatWidget() {
         }
       );
 
-      const data = await res.json();
-      const reply = data.reply ?? "I'm sorry, I couldn't process that. Please try again or contact us directly.";
+      const data = await res.json().catch(() => ({}));
+      const reply = !res.ok
+        ? res.status === 429
+          ? data.error || "You've sent quite a few messages — please wait a minute and try again."
+          : data.error || "I'm sorry, I couldn't process that right now. Please try again or contact us directly."
+        : data.reply ?? "I'm sorry, I couldn't process that. Please try again or contact us directly.";
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
       if (!open) setHasNew(true);
     } catch {

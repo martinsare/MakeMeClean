@@ -65,6 +65,14 @@ export default function InvoicePage() {
     paymentStatus === "disputed" ? "Disputed" :
     "Pending";
   const quantity = parseHoursFromTimeSlot(booking?.time_slot);
+  const vatRegistered = settings.vat_registered === "true";
+  const grossPrice = Number(booking?.price ?? 0);
+  const netPrice = vatRegistered ? Math.round((grossPrice / 1.2) * 100) / 100 : grossPrice;
+  const vatAmount = vatRegistered ? Math.round((grossPrice - netPrice) * 100) / 100 : 0;
+  const companyLegalName = settings.company_legal_name?.trim() || "MakeMeClean Ltd";
+  const companyRegNumber = settings.company_reg_number?.trim() || "";
+  const companyAddress = settings.company_registered_address?.trim() || "Wales, United Kingdom";
+  const vatNumber = settings.vat_number?.trim() || "";
 
   if (loading || fetching) {
     return (
@@ -115,9 +123,18 @@ export default function InvoicePage() {
           <div className="px-8 py-8 border-b border-gray-100">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Invoice</p>
-                <h1 className="text-3xl font-black text-gray-900 mt-2">MakeMeClean</h1>
-                <p className="text-sm text-gray-500 mt-1">{settings.email_payment}</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                  {vatRegistered ? "VAT Invoice" : "Invoice"}
+                </p>
+                <h1 className="text-3xl font-black text-gray-900 mt-2">{companyLegalName}</h1>
+                <p className="text-xs text-gray-500 mt-1">{companyAddress}</p>
+                {companyRegNumber && (
+                  <p className="text-xs text-gray-500">Company Reg. No: {companyRegNumber}</p>
+                )}
+                {vatRegistered && vatNumber && (
+                  <p className="text-xs text-gray-500">VAT Reg. No: {vatNumber}</p>
+                )}
+                <p className="text-sm text-gray-500 mt-1">{settings.email_payment || "payment@makemeclean.co.uk"}</p>
               </div>
               <div className="text-right">
                 <p className="text-sm text-gray-500">Invoice number</p>
@@ -165,7 +182,7 @@ export default function InvoicePage() {
             <div className="rounded-2xl border border-gray-100 overflow-hidden">
               <div className="grid grid-cols-12 bg-gray-50 text-xs font-semibold text-gray-500 px-5 py-3">
                 <div className="col-span-7">Description</div>
-                <div className="col-span-2 text-right">Qty</div>
+                <div className="col-span-2 text-right">Qty (hrs)</div>
                 <div className="col-span-3 text-right">Amount</div>
               </div>
               <div className="grid grid-cols-12 px-5 py-4 text-sm">
@@ -174,23 +191,30 @@ export default function InvoicePage() {
                   <p className="text-xs text-gray-400 mt-1">{formatDate(booking.date)} · {booking.time_slot}</p>
                 </div>
                 <div className="col-span-2 text-right text-gray-700">{formatQty(quantity)}</div>
-                <div className="col-span-3 text-right font-semibold text-gray-900">{formatCurrency(booking.price)}</div>
+                <div className="col-span-3 text-right font-semibold text-gray-900">{formatCurrency(grossPrice)}</div>
               </div>
               <div className="border-t border-gray-100 px-5 py-4">
                 <div className="flex justify-end">
                   <div className="w-full max-w-sm space-y-2 text-sm">
                     <div className="flex justify-between text-gray-600">
-                      <span>Subtotal</span>
-                      <span>{formatCurrency(booking.price)}</span>
+                      <span>Subtotal {vatRegistered ? "(Excl. VAT)" : ""}</span>
+                      <span>{formatCurrency(netPrice)}</span>
                     </div>
-                    <div className="flex justify-between text-gray-600">
-                      <span>VAT</span>
-                      <span>£0.00</span>
-                    </div>
+                    {vatRegistered ? (
+                      <div className="flex justify-between text-gray-600">
+                        <span>VAT (20%)</span>
+                        <span>{formatCurrency(vatAmount)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>VAT</span>
+                        <span>Not VAT registered (£0.00)</span>
+                      </div>
+                    )}
                     <div className="h-px bg-gray-100 my-2" />
                     <div className="flex justify-between text-gray-900 font-extrabold text-base">
                       <span>Total</span>
-                      <span>{formatCurrency(booking.price)}</span>
+                      <span>{formatCurrency(grossPrice)}</span>
                     </div>
                   </div>
                 </div>
@@ -199,7 +223,7 @@ export default function InvoicePage() {
 
             <div className="mt-8 rounded-2xl bg-gray-50 p-5 text-xs text-gray-500">
               <p className="font-semibold text-gray-700 mb-1">Notes</p>
-              <p>Thank you for choosing MakeMeClean. For questions about this invoice, contact {settings.email_payment}.</p>
+              <p>Thank you for choosing {companyLegalName}. For questions about this invoice, contact {settings.email_payment || "payment@makemeclean.co.uk"}.</p>
             </div>
           </div>
         </div>

@@ -109,7 +109,8 @@ export default function ServiceTerms() {
               </p>
               <p>
                 <strong className="text-gray-900">Payment methods:</strong>{" "}
-                Credit/debit card, bank transfer, or digital wallet
+                Credit/debit card and digital wallets (Apple Pay / Google Pay)
+                processed securely online via Stripe
               </p>
               <p>
                 <strong className="text-gray-900">Booking confirmation:</strong>{" "}
@@ -137,13 +138,13 @@ export default function ServiceTerms() {
               If you are not satisfied with our service:
             </p>
             <ul className="list-disc list-inside space-y-2 text-gray-600">
-              <li>Report issues within 48 hours of service</li>
-              <li>We will arrange a free re-clean within 5 business days</li>
+              <li>Report issues within 24 hours of service completion</li>
+              <li>We will arrange a free re-clean promptly at a mutually convenient time</li>
               <li>
-                If re-clean does not resolve the issue, you're eligible for a
-                full refund
+                If a re-clean does not resolve the issue, you may be eligible for a
+                partial or full refund
               </li>
-              <li>Photographic evidence may be requested</li>
+              <li>Photographic evidence may be requested to help us put things right</li>
             </ul>
             <p className="text-gray-600 leading-relaxed mt-4 text-sm">
               <strong>Note:</strong> Reasonable wear, existing marks, and
@@ -167,7 +168,7 @@ export default function ServiceTerms() {
               </li>
               <li>Provide accurate access instructions and contact numbers</li>
               <li>
-                Respect cleaner working hours (9am–6pm standard availability)
+                Respect cleaner working hours ({settings.business_hours || "7 days a week, 8am–8pm"}; standard booking start slots 07:00–17:00)
               </li>
               <li>Report any accidents or property damage immediately</li>
             </ul>
@@ -301,7 +302,7 @@ export default function ServiceTerms() {
           </section>
 
           <p className="text-xs text-gray-500 pt-4 border-t">
-            Last updated: May 2026
+            Last updated: 18 November 2026
           </p>
         </div>
       </div>

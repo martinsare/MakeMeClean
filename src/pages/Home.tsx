@@ -55,7 +55,7 @@ const trustBadges = [
   {
     icon: Lock,
     title: "Cashless & Secure",
-    desc: "Pay safely online only after your clean is completed.",
+    desc: "Fast, encrypted online payment via Stripe with free cancellation up to 24h before.",
   },
   {
     icon: Award,
@@ -247,7 +247,7 @@ const faqs = [
   },
   {
     q: "How does the payment work? When am I charged?",
-    a: "We operate a 100% secure, cashless booking system. You enter your payment details at booking, but funds are only processed after the clean is successfully completed and verified.",
+    a: "We operate a 100% secure, cashless booking system powered by Stripe. Payment is collected upfront when confirming your booking so your slot and vetted cleaner are locked in. You can cancel or reschedule free of charge with at least 24 hours' notice, and every clean is backed by our 100% Satisfaction Re-clean Guarantee.",
   },
   {
     q: "What if I need to cancel or reschedule my booking?",
@@ -289,43 +289,73 @@ export default function Home() {
       }
     });
 
-    // Fetch real customer reviews from Supabase
+    // Fetch real customer reviews & accurate aggregate rating via safe public RPC (no customer PII)
     supabase
-      .from("reviews")
-      .select(
-        `
-        overall_rating,
-        comments,
-        created_at,
-        bookings:booking_id ( service_name, city )
-      `
-      )
-      .order("created_at", { ascending: false })
-      .limit(8)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          const validReviews = data.filter(
-            (r: any) => r.comments && r.comments.trim().length > 0
+      .rpc("get_public_reviews", { p_limit: 8 })
+      .then(async ({ data: rpcData, error: rpcErr }) => {
+        if (!rpcErr && rpcData && typeof rpcData === "object") {
+          const payload = rpcData as {
+            total_count?: number;
+            avg_rating?: number;
+            reviews?: Array<{
+              overall_rating?: number;
+              comments?: string;
+              service_name?: string;
+              city?: string;
+            }>;
+          };
+          const count = Number(payload.total_count ?? 0);
+          const avg = Number(payload.avg_rating ?? 0);
+          setReviewStats(count > 0 ? { count, avg } : null);
+          setTestimonials(
+            (payload.reviews ?? []).map((r) => ({
+              name: "Verified Customer",
+              city: r.city || "Wales",
+              rating: r.overall_rating ?? 5,
+              text: r.comments || "",
+              service: r.service_name || "Domestic Clean",
+            }))
           );
-          const totalRating = data.reduce(
-            (acc: number, r: any) => acc + (r.overall_rating || 5),
+          return;
+        }
+
+        // Fallback if RPC is not yet migrated
+        const [{ data: latestData }, { data: allRatings, count: totalCount }] =
+          await Promise.all([
+            supabase
+              .from("reviews")
+              .select("overall_rating, comments, created_at")
+              .order("created_at", { ascending: false })
+              .limit(8),
+            supabase.from("reviews").select("overall_rating", { count: "exact" }),
+          ]);
+
+        const ratingsList = allRatings && allRatings.length > 0 ? allRatings : latestData || [];
+        const exactCount = typeof totalCount === "number" ? totalCount : ratingsList.length;
+
+        if (ratingsList.length > 0) {
+          const totalRating = ratingsList.reduce(
+            (acc: number, r: any) => acc + Number(r.overall_rating || 5),
             0
           );
-          const avg = Number((totalRating / data.length).toFixed(1));
-          setReviewStats({ count: data.length, avg });
-
-          const mapped: Testimonial[] = validReviews.map((r: any) => ({
-            name: "Verified Customer",
-            city: r.bookings?.city ?? "Wales",
-            rating: r.overall_rating ?? 5,
-            text: r.comments,
-            service: r.bookings?.service_name ?? "Domestic Clean",
-          }));
-          setTestimonials(mapped);
+          const avg = Number((totalRating / ratingsList.length).toFixed(1));
+          setReviewStats({ count: exactCount, avg });
         } else {
-          setTestimonials([]);
           setReviewStats(null);
         }
+
+        const validReviews = (latestData ?? []).filter(
+          (r: any) => r.comments && r.comments.trim().length > 0
+        );
+        setTestimonials(
+          validReviews.map((r: any) => ({
+            name: "Verified Customer",
+            city: "Wales",
+            rating: r.overall_rating ?? 5,
+            text: r.comments,
+            service: "Domestic Clean",
+          }))
+        );
       });
   }, []);
 

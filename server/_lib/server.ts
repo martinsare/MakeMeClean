@@ -1,11 +1,15 @@
+import crypto from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+export type { VercelRequest, VercelResponse };
 export {
   BOOKING_PROPERTY_TYPES,
   ACCESS_METHODS,
   CLEANING_SUPPLIES_OPTIONS,
   calculateRecommendedHours,
+  calculateRecommendedHoursForService,
   calculateDurationHours,
+  calculateBookingPrice,
   calcTimeSlot,
   DEFAULT_BOOKING_EXTRAS,
   DEFAULT_DURATION_MULTIPLIERS,
@@ -15,6 +19,11 @@ export {
   MIN_DURATION_HOURS,
   parseDurationMultipliers,
   parseBookingExtras,
+  getServiceCategory,
+  getServiceFieldLimits,
+  getAllowedExtrasForService,
+  getUkNowParts,
+  getHoursUntilBookingStart,
   isBookingStartTimePassed,
   isBookingEndTimePassed,
   START_HOURS,
@@ -29,6 +38,7 @@ export type {
   BookingDayKey,
   DayAvailabilityConfig,
   WeeklyAvailabilitySchedule,
+  ServiceCategory,
 } from '../../shared/booking.js';
 
 export interface AuthenticatedUser {
@@ -75,9 +85,34 @@ export const TELEGRAM_BOT_TOKEN = getEnv('TELEGRAM_BOT_TOKEN', '');
 export const TELEGRAM_CHAT_ID = getEnv('TELEGRAM_CHAT_ID', '');
 
 // ─── Supabase Client Factory ────────────────────────────────────────────────
+/**
+ * Returns a service-role Supabase client (bypasses RLS).
+ * Use ONLY after explicit server-side authentication, ownership, or admin checks.
+ */
+export function getAdminSupabase(): SupabaseClient {
+  const url = getEnv('SUPABASE_URL');
+  const key = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) {
+    throw new Error('Supabase URL or Service Role Key missing in server environment variables.');
+  }
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+/**
+ * Returns a Supabase client.
+ * - When `token` is provided, uses the ANON key + user Bearer token so RLS is enforced.
+ * - When `token` is omitted, uses the service role key (fallback to anon) for server reads.
+ */
 export function getServerSupabase(token?: string): SupabaseClient {
   const url = getEnv('SUPABASE_URL');
-  const key = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('SUPABASE_ANON_KEY');
+  const anonKey = getEnv('SUPABASE_ANON_KEY');
+  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const key = token ? anonKey || serviceKey : serviceKey || anonKey;
   if (!url || !key) {
     throw new Error('Supabase URL or Key missing in server environment variables.');
   }
@@ -113,26 +148,22 @@ function isOriginAllowed(origin: string): boolean {
       return true;
     }
 
-    // 2. Vercel deployments (*.vercel.app)
-    if (host.endsWith('.vercel.app')) {
+    // 2. Vercel preview deployments scoped to this project (or explicit allowlist)
+    const vercelUrl = getEnv('VERCEL_URL');
+    if (vercelUrl && host === vercelUrl.replace(/^https?:\/\//i, '').toLowerCase()) {
       return true;
     }
 
-    // 3. Replit deployments (*.replit.dev, *.replit.app)
-    if (host.endsWith('.replit.dev') || host.endsWith('.replit.app')) {
-      return true;
-    }
-
-    // 4. Configured environment variables (SITE_URL, CORS_ALLOWED_ORIGINS, REPLIT_DOMAINS)
+    // 3. Configured environment variables (SITE_URL, CORS_ALLOWED_ORIGINS)
     const configured = [
       getEnv('SITE_URL'),
       ...getEnv('CORS_ALLOWED_ORIGINS').split(','),
-      ...getEnv('REPLIT_DOMAINS').split(','),
     ];
     for (const entry of configured) {
-      if (!entry.trim()) continue;
+      const trimmed = entry.trim();
+      if (!trimmed || trimmed === '*') continue;
       try {
-        if (new URL(entry.trim().startsWith('http') ? entry.trim() : 'https://' + entry.trim()).origin === url.origin) {
+        if (new URL(trimmed.startsWith('http') ? trimmed : 'https://' + trimmed).origin === url.origin) {
           return true;
         }
       } catch (_) {}
@@ -146,21 +177,14 @@ function isOriginAllowed(origin: string): boolean {
 export function handleCors(req: VercelRequest, res: VercelResponse): boolean {
   const requestOrigin = req.headers.origin;
 
-  if (requestOrigin) {
-    if (isOriginAllowed(requestOrigin)) {
-      try {
-        const originUrl = new URL(requestOrigin).origin;
-        res.setHeader('Access-Control-Allow-Origin', originUrl);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Vary', 'Origin');
-      } catch (_) {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-      }
-    } else {
-      // If origin is not recognized, still allow standard API access rather than hard 403 on standard public queries
-      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+  if (requestOrigin && isOriginAllowed(requestOrigin)) {
+    try {
+      const originUrl = new URL(requestOrigin).origin;
+      res.setHeader('Access-Control-Allow-Origin', originUrl);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Vary', 'Origin');
+    } catch (_) {
+      // Do not reflect invalid origins
     }
   }
 
@@ -227,14 +251,78 @@ export async function verifyAuth(req: VercelRequest): Promise<{
   }
 }
 
+// ─── Security, Rate Limiting & Formatting Utilities ─────────────────────────
+export function escapeTelegramMarkdown(value: unknown): string {
+  return String(value ?? '').replace(/([_*`[\]])/g, '\\$1');
+}
+
+export function getClientIp(req: VercelRequest): string {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) {
+    return xff.split(',')[0].trim().slice(0, 64);
+  }
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return realIp.trim().slice(0, 64);
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+const memoryRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+export async function checkServerRateLimit(
+  key: string,
+  maxRequests: number,
+  windowSeconds: number
+): Promise<boolean> {
+  try {
+    const admin = getAdminSupabase();
+    const { data, error } = await admin.rpc('check_rate_limit', {
+      p_key: key,
+      p_max_requests: maxRequests,
+      p_window_seconds: windowSeconds,
+    });
+    if (!error && typeof data === 'boolean') {
+      return data;
+    }
+  } catch {
+    // Fall back to in-memory limiter if DB RPC is unavailable
+  }
+
+  const now = Date.now();
+  const entry = memoryRateLimits.get(key);
+  if (!entry || entry.resetAt <= now) {
+    memoryRateLimits.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });
+    return true;
+  }
+  if (entry.count >= maxRequests) {
+    return false;
+  }
+  entry.count += 1;
+  return true;
+}
+
 // ─── Business Rules & Pricing Calculations ──────────────────────────────────
 export function generateInvoiceNumber(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const randomSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
   return `INV-${year}${month}${day}-${randomSuffix}`;
+}
+
+export async function generateInvoiceNumberAsync(adminSupabase?: SupabaseClient): Promise<string> {
+  try {
+    const client = adminSupabase || getAdminSupabase();
+    const { data, error } = await client.rpc('next_invoice_number');
+    if (!error && typeof data === 'string' && data.trim()) {
+      return data.trim();
+    }
+  } catch {
+    // Fall back to CSPRNG suffix
+  }
+  return generateInvoiceNumber();
 }
 
 export function resolveServiceImageUrl(serviceId: string, dbImageUrl: string | null | undefined): string {

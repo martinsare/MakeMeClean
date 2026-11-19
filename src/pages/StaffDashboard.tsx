@@ -24,6 +24,7 @@ import {
 import StaffLayout from "@/components/staff/StaffLayout";
 import StaffShiftMarketplace from "@/components/staff/StaffShiftMarketplace";
 import Pagination from "@/components/Pagination";
+import { getServiceBookingConfig } from "@/lib/serviceBookingConfigs";
 
 const PAGE_SIZE = 10;
 
@@ -66,6 +67,7 @@ export default function StaffDashboard() {
   );
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [declineText, setDeclineText] = useState("");
 
@@ -121,10 +123,16 @@ export default function StaffDashboard() {
 
   const acceptShift = async (assignmentId: string, bookingId: string) => {
     setActionId(bookingId);
-    await supabase
+    setActionError("");
+    const { error } = await supabase
       .from("booking_assignments")
       .update({ acceptance_status: "accepted" })
       .eq("id", assignmentId);
+    if (error) {
+      setActionError(error.message || "Could not accept shift. Please try again.");
+      setActionId(null);
+      return;
+    }
     setBookings((prev) =>
       prev.map((b) =>
         b.assignmentId === assignmentId
@@ -138,13 +146,19 @@ export default function StaffDashboard() {
   const declineShift = async (assignmentId: string, bookingId: string) => {
     if (!decliningId) return;
     setActionId(bookingId);
-    await supabase
+    setActionError("");
+    const { error } = await supabase
       .from("booking_assignments")
       .update({
         acceptance_status: "declined",
         decline_reason: declineText || null,
       })
       .eq("id", assignmentId);
+    if (error) {
+      setActionError(error.message || "Could not decline shift. Please try again.");
+      setActionId(null);
+      return;
+    }
     setBookings((prev) =>
       prev.map((b) =>
         b.assignmentId === assignmentId
@@ -253,6 +267,12 @@ export default function StaffDashboard() {
           </div>
         ))}
       </div>
+
+      {actionError && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          {actionError}
+        </div>
+      )}
 
       {/* View Switcher Tabs */}
       <div className="flex border-b border-gray-200 mb-6 gap-2">
@@ -395,9 +415,14 @@ export default function StaffDashboard() {
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-700 pt-1 font-medium">
                           <Home className="w-4 h-4 text-green-600 shrink-0" />
-                          {b.bedrooms ?? 1} Bed · {b.bathrooms ?? 1} Bath ·{" "}
-                          {b.living_rooms ?? 1} Living (
-                          {b.property_type || "House/Flat"})
+                          {getServiceBookingConfig(
+                            b.service_type || b.service_name
+                          ).formatLayout(
+                            b.bedrooms,
+                            b.bathrooms,
+                            b.living_rooms,
+                            b.property_type
+                          )}
                         </div>
                         {Array.isArray(b.extras) && b.extras.length > 0 && (
                           <div className="flex items-start gap-2 text-xs text-green-800 bg-green-50 p-2 rounded-lg border border-green-100 font-semibold mt-1">

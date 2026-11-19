@@ -9,7 +9,7 @@ type Stage = "form" | "verify" | "done";
 function validateFullName(value: string) {
   const name = value.trim().replace(/\s+/g, " ");
   if (name.length < 2) return "Please enter your full name.";
-  if (!/^[A-Za-z][A-Za-z' -]*[A-Za-z]$/.test(name))
+  if (!/^[\p{L}][\p{L}' -]*[\p{L}]$/u.test(name))
     return "Full name can only include letters, spaces, hyphens and apostrophes.";
   if (name.split(" ").filter(Boolean).length < 2)
     return "Please enter your first and last name.";

@@ -196,7 +196,13 @@ export default function AdminApplicants() {
     ];
     const csv = rows
       .map((r) =>
-        r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")
+        r
+          .map((v) => {
+            const s = String(v ?? "");
+            const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+            return `"${safe.replace(/"/g, '""')}"`;
+          })
+          .join(",")
       )
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

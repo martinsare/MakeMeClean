@@ -12,7 +12,7 @@ export default function AccessibilityStatement() {
           <section>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Our Commitment</h2>
             <p className="text-gray-600 leading-relaxed">
-              MakeMeClean is committed to ensuring digital accessibility for all users, regardless of ability. We continuously work to improve the accessibility of our website and services to comply with the Public Sector Bodies Accessibility Regulations 2018 (implementing the EU Web Accessibility Directive).
+              {settings.company_legal_name || "MakeMeClean"} is committed to ensuring digital accessibility for all users, regardless of ability. We continuously work to improve the accessibility of our website and services in line with the UK Equality Act 2010 and the Web Content Accessibility Guidelines (WCAG) 2.1 Level AA.
             </p>
           </section>
 
@@ -51,8 +51,8 @@ export default function AccessibilityStatement() {
               We are aware of the following areas that may present challenges:
             </p>
             <ul className="list-disc list-inside space-y-2 text-gray-600">
-              <li>Third-party payment system may have limited accessibility features</li>
-              <li>Some embedded Google Maps features may not be fully keyboard accessible</li>
+              <li>Third-party hosted checkout pages (Stripe) are managed externally, though Stripe maintains WCAG 2.1 AA accessibility practices</li>
+              <li>Some complex admin data tables and print-formatted invoices may require horizontal scrolling on very small viewports</li>
             </ul>
             <p className="text-gray-600 leading-relaxed mt-4">
               We are working to address these issues and welcome your feedback.
@@ -96,13 +96,13 @@ export default function AccessibilityStatement() {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Enforcement Procedure</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Feedback & Further Support</h2>
             <p className="text-gray-600 leading-relaxed">
-              If you're dissatisfied with our response to accessibility concerns, you can contact the <a href="https://www.equalityhumanrights.com" target="_blank" rel="noopener noreferrer" className="text-green-600 font-semibold hover:underline">Equality and Human Rights Commission</a> who enforce the Public Sector Bodies Accessibility Regulations.
+              If you&apos;re dissatisfied with our response to an accessibility concern, you can seek independent advice from the <a href="https://www.equalityadvisoryservice.com" target="_blank" rel="noopener noreferrer" className="text-green-600 font-semibold hover:underline">Equality Advisory and Support Service (EASS)</a> regarding your rights under the UK Equality Act 2010.
             </p>
           </section>
 
-          <p className="text-xs text-gray-500 pt-4 border-t">Last updated: May 2026</p>
+          <p className="text-xs text-gray-500 pt-4 border-t">Last updated: 18 November 2026</p>
         </div>
       </div>
     </div>

@@ -42,10 +42,10 @@ export default function CancellationPolicy() {
             <h2 className="text-xl font-bold text-gray-900 mb-4">How to Cancel</h2>
             <ol className="list-decimal list-inside space-y-2 text-gray-600">
               <li>Log in to your MakeMeClean account</li>
-              <li>Go to "My Bookings"</li>
+              <li>Go to &ldquo;My Bookings&rdquo;</li>
               <li>Select the booking you wish to cancel</li>
-              <li>Click "Cancel Booking" (available until 3 hours before service)</li>
-              <li>Refund (if applicable) will be processed within 3-5 business days</li>
+              <li>For unpaid bookings, click &ldquo;Cancel Booking&rdquo; (available until 3 hours before service). For paid bookings, click &ldquo;Request Refund&rdquo; so our team can cancel and process your Stripe refund in line with the tiers above.</li>
+              <li>Approved refunds are returned to your original payment method within 3–5 business days</li>
             </ol>
           </section>
 
@@ -80,12 +80,11 @@ export default function CancellationPolicy() {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">Payment & Refunds</h2>
             <p className="text-gray-600 leading-relaxed mb-4">
-              Refunds are processed to your original payment method:
+              All payments are processed securely online via Stripe. Approved refunds are returned to your original payment method:
             </p>
             <ul className="list-disc list-inside space-y-2 text-gray-600">
-              <li>Credit/Debit card: 3-5 business days</li>
-              <li>Bank transfer: 2-3 business days</li>
-              <li>Digital wallet: Instant to 2 business days</li>
+              <li>Credit/Debit card (via Stripe): typically 3–5 business days (up to 10 days depending on your card issuer)</li>
+              <li>Digital wallets (Apple Pay / Google Pay via Stripe): typically 1–5 business days</li>
             </ul>
           </section>
 
@@ -96,7 +95,7 @@ export default function CancellationPolicy() {
             </p>
           </section>
 
-          <p className="text-xs text-gray-500 pt-4 border-t">Last updated: May 2026</p>
+          <p className="text-xs text-gray-500 pt-4 border-t">Last updated: 18 November 2026</p>
         </div>
       </div>
     </div>

@@ -30,6 +30,7 @@ import { START_HOURS } from "@/lib/services";
 import { Booking, RescheduleRequest } from "@/types";
 import {
   BOOKING_STATUS_STYLES,
+  getHoursUntilBookingStart,
   isBookingStartTimePassed,
 } from "@/lib/constants";
 import { api } from "@/lib/apiClient";
@@ -43,11 +44,15 @@ function canCancelBooking(booking: Booking): {
 } {
   if (booking.status !== "upcoming")
     return { allowed: false, reason: "Booking is not upcoming." };
-  const startHour = booking.time_slot.split("–")[0].trim().split(" ")[0].trim();
-  const bookingDateTime = new Date(`${booking.date}T${startHour}:00`);
-  const hoursUntil =
-    (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
-  if (hoursUntil <= 3) {
+  if (booking.payment_status === "paid")
+    return {
+      allowed: false,
+      reason:
+        "Paid bookings cannot be cancelled directly — please use the Request Refund button above so our team can process your refund.",
+    };
+  const startHour = booking.time_slot.split(/[-–]/)[0]?.trim() || "09:00";
+  const hoursUntil = getHoursUntilBookingStart(booking.date, booking.time_slot);
+  if (hoursUntil !== null && hoursUntil <= 3) {
     return {
       allowed: false,
       reason: `Cancellations must be made at least 3 hours before the booking. Yours starts at ${startHour} on ${booking.date}.`,
@@ -106,6 +111,7 @@ export default function BookingDetail() {
   const [rescheduleTime, setRescheduleTime] = useState("09:00");
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     if (!loading && !user) setLocation("/login");
@@ -124,15 +130,16 @@ export default function BookingDetail() {
       .then(([bk, { data: r }]) => {
         setBooking(bk as Booking | null);
         setHasReview(!!r);
-        if (bk?.active_reschedule) {
+        const rescheduleData = bk?.rescheduleRequest || bk?.active_reschedule;
+        if (rescheduleData) {
           setExistingRequest({
-            id: bk.active_reschedule.id,
+            id: rescheduleData.id,
             booking_id: bk.id,
             user_id: user.id,
-            created_at: bk.active_reschedule.created_at,
-            requested_date: bk.active_reschedule.requested_date,
-            requested_time: bk.active_reschedule.requested_time_slot,
-            status: bk.active_reschedule.status,
+            created_at: rescheduleData.created_at,
+            requested_date: rescheduleData.requested_date,
+            requested_time: rescheduleData.requested_time ?? rescheduleData.requested_time_slot ?? "",
+            status: rescheduleData.status,
           });
         }
         if (bk?.service_type) {
@@ -155,18 +162,23 @@ export default function BookingDetail() {
   const handleCancel = async () => {
     if (!booking) return;
     setCancelling(true);
+    setActionError("");
     try {
       await api.cancelBooking(booking.id);
       setBooking({ ...booking, status: "cancelled" });
-    } catch (_) {}
+      setShowConfirm(false);
+    } catch (err: any) {
+      setActionError(err?.message || "Failed to cancel booking. Please try again.");
+      setShowConfirm(false);
+    }
     setCancelling(false);
-    setShowConfirm(false);
   };
 
   const handleReschedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!booking || !user) return;
     setRescheduling(true);
+    setActionError("");
     try {
       const res = await api.requestReschedule(booking.id, {
         requestedDate: rescheduleDate,
@@ -183,7 +195,9 @@ export default function BookingDetail() {
         status: "pending",
       });
       setShowReschedule(false);
-    } catch (_) {}
+    } catch (err: any) {
+      setActionError(err?.message || "Failed to submit reschedule request. Please try again.");
+    }
     setRescheduling(false);
   };
 
@@ -247,6 +261,13 @@ export default function BookingDetail() {
         >
           <ArrowLeft className="w-4 h-4" /> Back to bookings
         </Link>
+
+        {actionError && (
+          <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{actionError}</span>
+          </div>
+        )}
 
         {/* Hero card */}
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden mb-4">

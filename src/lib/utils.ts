@@ -1,5 +1,10 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import {
+  getUkNowParts,
+  isBookingStartTimePassed as sharedIsBookingStartTimePassed,
+  isBookingEndTimePassed as sharedIsBookingEndTimePassed,
+} from "../../shared/booking";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,53 +27,22 @@ export function formatDate(dateStr: string): string {
 }
 
 export function isPastDate(dateStr: string): boolean {
-  const bookingDate = new Date(`${dateStr}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Number.isFinite(bookingDate.getTime()) && bookingDate < today;
+  if (!dateStr) return false;
+  return dateStr < getUkNowParts().dateStr;
 }
 
 /**
- * Returns true if the scheduled slot time on the booking date has already passed.
- * e.g., date: "2026-10-29", timeSlot: "11:00 – 18:00" -> checks whether current time > 11:00 on 2026-10-29.
+ * Returns true if the scheduled slot start time on the booking date has already passed (Europe/London).
  */
 export function isBookingStartTimePassed(dateStr: string, timeSlot?: string | null): boolean {
-  if (!dateStr) return false;
-  const startHourStr = (timeSlot || "09:00").split(/[-–]/)[0]?.trim() || "09:00";
-  const [hour, min] = startHourStr.split(":").map(Number);
-  const scheduledTime = new Date(`${dateStr}T${String(hour || 9).padStart(2, "0")}:${String(min || 0).padStart(2, "0")}:00`);
-  const now = new Date();
-  return Number.isFinite(scheduledTime.getTime()) && now > scheduledTime;
+  return sharedIsBookingStartTimePassed(dateStr, timeSlot);
 }
 
 /**
- * Returns true if the entire scheduled cleaning slot has concluded.
- * e.g., date: "2026-10-29", timeSlot: "11:00 – 18:00" -> checks whether current time > 18:00 on 2026-10-29.
+ * Returns true if the entire scheduled cleaning slot has concluded (Europe/London).
  */
 export function isBookingEndTimePassed(dateStr: string, timeSlot?: string | null, durationHours?: number | null): boolean {
-  if (!dateStr) return false;
-  const parts = (timeSlot || "").split(/[-–]/).map((p) => p.trim());
-  let endHour = 11;
-  let endMin = 0;
-
-  if (parts.length >= 2 && parts[1]) {
-    const [h, m] = parts[1].split(":").map(Number);
-    if (Number.isFinite(h)) endHour = h;
-    if (Number.isFinite(m)) endMin = m || 0;
-  } else {
-    const startStr = parts[0] || "09:00";
-    const [startH, startM] = startStr.split(":").map(Number);
-    const duration = durationHours || 2;
-    const totalMinutes = (startH || 9) * 60 + (startM || 0) + Math.round(duration * 60);
-    endHour = Math.floor(totalMinutes / 60);
-    endMin = totalMinutes % 60;
-  }
-
-  const scheduledEnd = new Date(
-    `${dateStr}T${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}:00`
-  );
-  const now = new Date();
-  return Number.isFinite(scheduledEnd.getTime()) && now > scheduledEnd;
+  return sharedIsBookingEndTimePassed(dateStr, timeSlot, durationHours);
 }
 
 export function isActiveUpcomingBooking(status: string, dateStr: string, timeSlot?: string | null, paymentStatus?: string | null): boolean {

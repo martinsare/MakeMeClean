@@ -1,28 +1,49 @@
 // Edge Function: send-otp
-// Generates a 6-digit OTP, saves to DB, and emails it via Brevo.
+// Generates a 6-digit OTP, saves to DB with proper rate limiting (non-destructive),
+// prevents account enumeration on password_reset, and emails it via Brevo.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-function corsHeaders() {
-  const origin = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+function corsHeaders(req?: Request) {
+  const configured = Deno.env.get("ALLOWED_ORIGIN");
+  const reqOrigin = req?.headers.get("Origin") ?? "";
+  let allowOrigin = configured || "https://makemeclean.co.uk";
+  if (
+    reqOrigin &&
+    (reqOrigin === "https://makemeclean.co.uk" ||
+      reqOrigin === "https://www.makemeclean.co.uk" ||
+      reqOrigin.startsWith("http://localhost:") ||
+      reqOrigin.startsWith("http://127.0.0.1:") ||
+      (configured && reqOrigin === configured))
+  ) {
+    allowOrigin = reqOrigin;
+  }
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
   };
 }
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, req?: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
 
 function generateOtp(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  const num = (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0;
-  return String(100000 + (num % 900000));
+  // Rejection-sampled unbiased 6-digit code
+  const max = 900000;
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  let val = 0;
+  do {
+    crypto.getRandomValues(buf);
+    val = buf[0];
+  } while (val >= limit);
+  return String(100000 + (val % max));
 }
 
 async function sendOtpEmail(toEmail: string, otp: string, purpose: string) {
@@ -30,9 +51,24 @@ async function sendOtpEmail(toEmail: string, otp: string, purpose: string) {
   if (!apiKey) throw new Error("BREVO_API_KEY not set");
 
   const isCareer = purpose === "careers";
-  const subject = isCareer
-    ? "Your MakeMeClean application verification code"
-    : "Verify your MakeMeClean account";
+  const isReset = purpose === "password_reset";
+  const subject = isReset
+    ? "Your MakeMeClean password reset code"
+    : isCareer
+      ? "Your MakeMeClean application verification code"
+      : "Verify your MakeMeClean account";
+
+  const heading = isReset
+    ? "Reset your password"
+    : isCareer
+      ? "Verify your email to continue your application"
+      : "Confirm your email address";
+
+  const intro = isReset
+    ? "Enter this code on the password reset screen to choose a new password."
+    : isCareer
+      ? "Enter this code to verify your email and save your application progress."
+      : "Enter this code on the verification screen to create your account.";
 
   const html = `
 <!doctype html>
@@ -48,14 +84,8 @@ async function sendOtpEmail(toEmail: string, otp: string, purpose: string) {
         </tr>
         <tr>
           <td style="padding:28px 28px 12px">
-            <h2 style="margin:0 0 10px;font-weight:800;font-size:20px;color:#111827">
-              ${isCareer ? "Verify your email to continue your application" : "Confirm your email address"}
-            </h2>
-            <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#6b7280">
-              ${isCareer
-                ? "Enter this code to verify your email and save your application progress."
-                : "Enter this code on the verification screen to create your account."}
-            </p>
+            <h2 style="margin:0 0 10px;font-weight:800;font-size:20px;color:#111827">${heading}</h2>
+            <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#6b7280">${intro}</p>
             <div style="background:#f9fafb;border:2px dashed #d1fae5;border-radius:16px;padding:24px;text-align:center;margin-bottom:24px">
               <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Your verification code</p>
               <span style="font-size:40px;font-weight:900;color:#16a34a;letter-spacing:8px;font-family:monospace">${otp}</span>
@@ -98,80 +128,99 @@ async function sendOtpEmail(toEmail: string, otp: string, purpose: string) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders() });
-  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders(req) });
+  if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" }, req);
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) return json(500, { ok: false, error: "Server misconfiguration" });
+    if (!supabaseUrl || !serviceKey) return json(500, { ok: false, error: "Server misconfiguration" }, req);
 
     const { email, purpose } = (await req.json()) as { email?: string; purpose?: string };
-    if (!email || !email.includes("@")) return json(400, { ok: false, error: "Valid email required" });
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizedEmail)) {
+      return json(400, { ok: false, error: "Valid email required" }, req);
+    }
 
     const validPurposes = ["registration", "careers", "password_reset"];
     const resolvedPurpose = validPurposes.includes(purpose ?? "") ? purpose! : "registration";
 
     const db = createClient(supabaseUrl, serviceKey);
 
-    if (resolvedPurpose === "password_reset") {
-      let authUser = null;
-      let page = 1;
-      const perPage = 1000;
-
-      while (!authUser) {
-        const { data, error } = await db.auth.admin.listUsers({ page, perPage });
-        if (error) return json(500, { ok: false, error: "Failed to check account" });
-
-        const users = data?.users ?? [];
-        if (!users.length) break;
-
-        authUser = users.find((u) => u.email?.trim().toLowerCase() === email.toLowerCase()) ?? null;
-        if (users.length < perPage) break;
-        page += 1;
-      }
-
-      if (!authUser) {
-        return json(404, { ok: false, error: "No account found for that email address" });
-      }
-    }
-
     // Rate-limit: max 3 OTPs per email per purpose per 10 minutes
+    // (Rows are soft-invalidated rather than deleted so the rate limit cannot be bypassed)
     const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { count } = await db
       .from("email_verifications")
       .select("id", { count: "exact", head: true })
-      .eq("email", email.toLowerCase())
+      .eq("email", normalizedEmail)
       .eq("purpose", resolvedPurpose)
       .gte("created_at", tenMinsAgo);
 
     if ((count ?? 0) >= 3) {
-      return json(429, { ok: false, error: "Too many attempts. Please wait a few minutes." });
+      return json(429, { ok: false, error: "Too many attempts. Please wait a few minutes." }, req);
+    }
+
+    // Also enforce IP-level rate limit if rate_limits RPC is available
+    const clientIp = (req.headers.get("x-forwarded-for") || "unknown").split(",")[0].trim();
+    try {
+      const { data: ipAllowed } = await db.rpc("check_rate_limit", {
+        p_key: `send-otp:${clientIp}`,
+        p_max_requests: 10,
+        p_window_seconds: 600,
+      });
+      if (ipAllowed === false) {
+        return json(429, { ok: false, error: "Too many requests from this network. Please wait a few minutes." }, req);
+      }
+    } catch {
+      // Fallback if migration has not run yet
+    }
+
+    // For password_reset, check user existence in O(1) without leaking whether account exists
+    if (resolvedPurpose === "password_reset") {
+      const { data: userId, error: lookupErr } = await db.rpc("get_auth_user_id_by_email", {
+        p_email: normalizedEmail,
+      });
+      if (lookupErr) {
+        console.error("[send-otp] email lookup error:", lookupErr);
+        return json(500, { ok: false, error: "Unable to process request" }, req);
+      }
+      if (!userId) {
+        // Return generic 200 to prevent account enumeration
+        return json(200, { ok: true }, req);
+      }
     }
 
     const otp = generateOtp();
+    const nowIso = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-    // Delete old unexpired OTPs for this email+purpose before inserting new one
+    // Soft-invalidate previous unverified OTPs (keep rows intact for rate limiting!)
     await db
       .from("email_verifications")
-      .delete()
-      .eq("email", email.toLowerCase())
+      .update({ invalidated_at: nowIso })
+      .eq("email", normalizedEmail)
       .eq("purpose", resolvedPurpose)
-      .is("verified_at", null);
+      .is("verified_at", null)
+      .is("invalidated_at", null);
 
-    await db.from("email_verifications").insert({
-      email: email.toLowerCase(),
+    const { error: insertErr } = await db.from("email_verifications").insert({
+      email: normalizedEmail,
       purpose: resolvedPurpose,
       otp,
       expires_at: expiresAt,
+      attempts: 0,
     });
+    if (insertErr) {
+      console.error("[send-otp] insert error:", insertErr);
+      return json(500, { ok: false, error: "Failed to generate verification code" }, req);
+    }
 
-    await sendOtpEmail(email, otp, resolvedPurpose);
+    await sendOtpEmail(normalizedEmail, otp, resolvedPurpose);
 
-    return json(200, { ok: true });
+    return json(200, { ok: true }, req);
   } catch (e) {
     console.error("send-otp error:", e);
-    return json(500, { ok: false, error: String((e as Error)?.message ?? e) });
+    return json(500, { ok: false, error: "Failed to send verification code" }, req);
   }
 });

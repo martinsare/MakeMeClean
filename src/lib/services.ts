@@ -1,5 +1,8 @@
+import { supabase } from "./supabase";
+
 export {
   calcTimeSlot,
+  calculateBookingPrice,
   START_HOURS,
   BOOKING_DAYS,
   DEFAULT_WEEKLY_AVAILABILITY,
@@ -96,7 +99,6 @@ export const walesCities = [
 
 export async function fetchActiveCities(): Promise<string[]> {
   try {
-    const { supabase } = await import("./supabase");
     const { data, error } = await supabase
       .from("service_cities")
       .select("name")
@@ -112,7 +114,6 @@ export async function fetchActiveCities(): Promise<string[]> {
 
 export async function fetchActiveServiceLocations(): Promise<ServiceCityLocation[]> {
   try {
-    const { supabase } = await import("./supabase");
     const { data, error } = await supabase
       .from("service_cities")
       .select("id, name, region, postcode_prefix")

@@ -5,10 +5,12 @@ import {
   sendSuccess,
   sendError,
   resolveServiceImageUrl,
+  getUkNowParts,
 } from '../_lib/server.js';
+import { computeLoyaltyTier } from './loyalty.js';
 
 function isPastDate(date: string) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getUkNowParts().dateStr;
   return date < today;
 }
 
@@ -27,7 +29,7 @@ export async function handleDashboard(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const [profileRes, bookingsRes, servicesRes, notifsRes, settingsRes] = await Promise.all([
+    const [profileRes, bookingsRes, servicesRes, notifsRes, settingsRes, loyaltyRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
       supabase
         .from('bookings')
@@ -37,6 +39,7 @@ export async function handleDashboard(req: VercelRequest, res: VercelResponse) {
       supabase.from('services').select('*').eq('active', true).order('price', { ascending: true }),
       supabase.from('notifications').select('id, title, message, read, created_at').eq('user_id', user.id).eq('read', false),
       supabase.from('settings').select('value').eq('key', 'loyalty_enabled').maybeSingle(),
+      supabase.from('loyalty_points').select('points').eq('user_id', user.id),
     ]);
 
     const loyaltyEnabled = settingsRes?.data?.value === 'true';
@@ -79,35 +82,25 @@ export async function handleDashboard(req: VercelRequest, res: VercelResponse) {
 
     const profile = profileRes.data || {
       id: user.id,
-      email: user.email,
       full_name: user.email?.split('@')[0] || 'Customer',
-      loyalty_points: 0,
+      phone: null,
+      address: null,
+      city: null,
+      postcode: null,
+      created_at: null,
     };
 
-    const points = Number(profile.loyalty_points || 0);
-    let tier = 'Bronze';
-    let discountPercent = 0;
-    let nextTierPoints = 100;
-
-    if (points >= 500) {
-      tier = 'Platinum';
-      discountPercent = 20;
-      nextTierPoints = 500;
-    } else if (points >= 250) {
-      tier = 'Gold';
-      discountPercent = 15;
-      nextTierPoints = 500;
-    } else if (points >= 100) {
-      tier = 'Silver';
-      discountPercent = 10;
-      nextTierPoints = 250;
-    }
+    const points = Math.max(
+      0,
+      (loyaltyRes.data || []).reduce((sum, row) => sum + Number(row.points || 0), 0)
+    );
+    const tierInfo = computeLoyaltyTier(points);
 
     return sendSuccess(res, {
       profile: {
         id: profile.id,
         full_name: profile.full_name,
-        email: profile.email || user.email,
+        email: user.email,
         phone: profile.phone,
         address: profile.address,
         city: profile.city,
@@ -121,14 +114,15 @@ export async function handleDashboard(req: VercelRequest, res: VercelResponse) {
       loyalty: {
         enabled: loyaltyEnabled,
         points,
-        tier,
-        discount_percent: discountPercent,
-        next_tier_points: nextTierPoints,
+        tier: tierInfo.tier,
+        discount_percent: tierInfo.discountPercent,
+        next_tier_points: tierInfo.nextTierPoints,
       },
       loyalty_enabled: loyaltyEnabled,
       unread_notifications_count: notifsRes.data ? notifsRes.data.length : 0,
     });
   } catch (err: any) {
-    return sendError(res, err?.message || 'Failed to fetch dashboard data', 500);
+    console.error('[dashboard] error:', err);
+    return sendError(res, 'Failed to fetch dashboard data', 500);
   }
 }

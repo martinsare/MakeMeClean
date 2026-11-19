@@ -43,6 +43,13 @@ import {
 } from "@/lib/constants";
 import Spinner from "@/components/Spinner";
 import { getServiceBookingConfig } from "@/lib/serviceBookingConfigs";
+import { getWeekMonday } from "@/lib/payroll";
+
+function sanitizeCsvCell(value: unknown): string {
+  const s = String(value ?? "");
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
 
 type StatusFilter =
   | "all"
@@ -151,6 +158,9 @@ export default function AdminPanel() {
   );
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [shiftApplications, setShiftApplications] = useState<
+    Record<string, string[]>
+  >({});
   const [fetching, setFetching] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("upcoming");
@@ -180,24 +190,44 @@ export default function AdminPanel() {
 
   const fetchAll = async () => {
     setFetching(true);
+
+    // Fetch bookings in 1,000-row batches so high-volume accounts are never silently truncated
+    const fetchAllBookings = async () => {
+      const all: Booking[] = [];
+      const batchSize = 1000;
+      for (let from = 0; from < 10000; from += batchSize) {
+        const { data, error } = await supabase
+          .from("bookings")
+          .select("*, profiles(full_name, phone)")
+          .order("created_at", { ascending: false })
+          .range(from, from + batchSize - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...(data as Booking[]));
+        if (data.length < batchSize) break;
+      }
+      return all;
+    };
+
     const [
-      { data: bData },
+      loadedBookings,
       { data: svcData },
       { data: staffData },
       { data: aData },
+      { data: shiftAppData },
     ] = await Promise.all([
-      supabase
-        .from("bookings")
-        .select("*, profiles(full_name, phone)")
-        .order("created_at", { ascending: false }),
+      fetchAllBookings(),
       supabase.from("services").select("id, image_url"),
       supabase
         .from("staff")
         .select("id, first_name, last_name, email")
         .eq("active", true),
-      supabase.from("booking_assignments").select("booking_id, staff_id"),
+      supabase.from("booking_assignments").select("booking_id, staff_id").limit(10000),
+      supabase
+        .from("shift_applications")
+        .select("booking_id, cleaner_id")
+        .eq("status", "pending")
+        .limit(5000),
     ]);
-    const loadedBookings = (bData as Booking[]) ?? [];
 
     // Automatically detect and update unpaid bookings whose scheduled start time has arrived/passed
     const expiredUnpaidIds = loadedBookings
@@ -210,7 +240,7 @@ export default function AdminPanel() {
       .map((b) => b.id);
 
     if (expiredUnpaidIds.length > 0) {
-      void supabase
+      await supabase
         .from("bookings")
         .update({ status: "cancelled" })
         .in("id", expiredUnpaidIds);
@@ -228,6 +258,15 @@ export default function AdminPanel() {
     const aMap: Record<string, string> = {};
     for (const a of aData ?? []) aMap[a.booking_id] = a.staff_id;
     setAssignments(aMap);
+
+    const appMap: Record<string, string[]> = {};
+    for (const app of (shiftAppData ?? []) as { booking_id: string; cleaner_id: string }[]) {
+      if (!appMap[app.booking_id]) appMap[app.booking_id] = [];
+      if (!appMap[app.booking_id].includes(app.cleaner_id)) {
+        appMap[app.booking_id].push(app.cleaner_id);
+      }
+    }
+    setShiftApplications(appMap);
 
     // Fetch booking enabled status
     const { data: bookingEnabledSetting } = await supabase
@@ -293,27 +332,21 @@ export default function AdminPanel() {
     setPickedStaff(assignments[booking.id] ?? "");
     setAssignError("");
 
-    // Check staff availability for this booking's date
-    const dateObj = new Date(booking.date);
-    const days = [
-      "sunday",
-      "monday",
-      "tuesday",
-      "wednesday",
-      "thursday",
-      "friday",
-      "saturday",
-    ];
-    const dayOfWeek = days[dateObj.getDay()];
+    // Check staff availability for this booking's week and day using the real (week_start, day_slots) schema
+    const dateObj = new Date(`${booking.date}T00:00:00`);
+    const weekStart = getWeekMonday(dateObj);
+    const dayKeys = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+    const dayKey = dayKeys[dateObj.getDay()];
 
     const { data: avData } = await supabase
       .from("staff_availability")
-      .select("staff_id, is_available")
-      .eq("day_of_week", dayOfWeek);
+      .select("staff_id, day_slots")
+      .eq("week_start", weekStart);
 
     const avMap: Record<string, boolean> = {};
-    for (const a of avData ?? []) {
-      avMap[a.staff_id] = a.is_available;
+    for (const a of (avData ?? []) as any[]) {
+      const slot = a.day_slots?.[dayKey];
+      avMap[a.staff_id] = Boolean(slot && slot.from && slot.to);
     }
     setStaffAvailability(avMap);
   };
@@ -348,6 +381,13 @@ export default function AdminPanel() {
         else delete next[assignModal.booking.id];
         return next;
       });
+      if (pickedStaff) {
+        setShiftApplications((prev) => {
+          const next = { ...prev };
+          delete next[assignModal.booking.id];
+          return next;
+        });
+      }
       setAssignModal(null);
     } catch (e) {
       setAssignError((e as Error).message ?? "Something went wrong.");
@@ -402,7 +442,7 @@ export default function AdminPanel() {
       }),
     ];
     const csv = rows
-      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .map((r) => r.map(sanitizeCsvCell).join(","))
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
@@ -638,49 +678,68 @@ export default function AdminPanel() {
                       Unassign
                     </span>
                   </div>
-                  {staff.map((s) => {
-                    const available = staffAvailability[s.id];
-                    const hasData = s.id in staffAvailability;
-                    return (
-                      <div
-                        key={s.id}
-                        onClick={() => !assigning && setPickedStaff(s.id)}
-                        className={cn(
-                          "flex items-center gap-3 p-3 rounded-xl cursor-pointer border-2 transition-all",
-                          pickedStaff === s.id
-                            ? "border-green-500 bg-green-50"
-                            : "border-gray-100 hover:border-gray-200 bg-white"
-                        )}
-                      >
+                  {[...staff]
+                    .sort((a, b) => {
+                      const applicants = shiftApplications[assignModal.booking.id] ?? [];
+                      const aApplied = applicants.includes(a.id) ? 1 : 0;
+                      const bApplied = applicants.includes(b.id) ? 1 : 0;
+                      return bApplied - aApplied;
+                    })
+                    .map((s) => {
+                      const available = staffAvailability[s.id];
+                      const hasData = s.id in staffAvailability;
+                      const hasApplied = (
+                        shiftApplications[assignModal.booking.id] ?? []
+                      ).includes(s.id);
+                      return (
                         <div
+                          key={s.id}
+                          onClick={() => !assigning && setPickedStaff(s.id)}
                           className={cn(
-                            "w-4 h-4 rounded-full border-2 shrink-0 transition-colors",
+                            "flex items-center gap-3 p-3 rounded-xl cursor-pointer border-2 transition-all",
                             pickedStaff === s.id
-                              ? "border-green-500 bg-green-500"
-                              : "border-gray-300"
+                              ? "border-green-500 bg-green-50"
+                              : hasApplied
+                              ? "border-indigo-200 bg-indigo-50/40 hover:border-indigo-300"
+                              : "border-gray-100 hover:border-gray-200 bg-white"
                           )}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {s.first_name} {s.last_name}
-                          </p>
-                          <p className="text-xs text-gray-400 truncate">
-                            {s.email}
-                          </p>
+                        >
+                          <div
+                            className={cn(
+                              "w-4 h-4 rounded-full border-2 shrink-0 transition-colors",
+                              pickedStaff === s.id
+                                ? "border-green-500 bg-green-500"
+                                : "border-gray-300"
+                            )}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">
+                              {s.first_name} {s.last_name}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate">
+                              {s.email}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {hasApplied && (
+                              <span className="text-xs font-bold text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                Applied
+                              </span>
+                            )}
+                            {hasData &&
+                              (available ? (
+                                <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                                  Available
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                                  Not set
+                                </span>
+                              ))}
+                          </div>
                         </div>
-                        {hasData &&
-                          (available ? (
-                            <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
-                              Available
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full shrink-0">
-                              Not set
-                            </span>
-                          ))}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
                 {pickedStaff && (
                   <p className="text-xs text-gray-400 mt-2">
@@ -918,32 +977,43 @@ export default function AdminPanel() {
 
                   {/* Assigned */}
                   <div className="min-w-0">
-                    <button
-                      onClick={() => openAssign(b)}
-                      disabled={b.payment_status !== "paid"}
-                      className={cn(
-                        "flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-all w-full",
-                        b.payment_status !== "paid"
-                          ? "border-amber-200/80 bg-amber-50/60 text-amber-700 cursor-not-allowed opacity-90"
-                          : assignedStaff
-                          ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
-                          : "border-gray-200 text-gray-400 hover:border-green-200 hover:text-green-600 hover:bg-green-50"
-                      )}
-                      title={
-                        b.payment_status !== "paid"
-                          ? "Payment required before assigning staff"
-                          : "Assign a cleaner to this job"
-                      }
-                    >
-                      <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">
-                        {b.payment_status !== "paid"
-                          ? "Awaiting payment"
-                          : assignedStaff
-                          ? `${assignedStaff.first_name} ${assignedStaff.last_name}`
-                          : "Assign staff"}
-                      </span>
-                    </button>
+                    {(() => {
+                      const pendingApplicants = shiftApplications[b.id]?.length ?? 0;
+                      return (
+                        <button
+                          onClick={() => openAssign(b)}
+                          disabled={b.payment_status !== "paid"}
+                          className={cn(
+                            "flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-all w-full",
+                            b.payment_status !== "paid"
+                              ? "border-amber-200/80 bg-amber-50/60 text-amber-700 cursor-not-allowed opacity-90"
+                              : assignedStaff
+                              ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                              : pendingApplicants > 0
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                              : "border-gray-200 text-gray-400 hover:border-green-200 hover:text-green-600 hover:bg-green-50"
+                          )}
+                          title={
+                            b.payment_status !== "paid"
+                              ? "Payment required before assigning staff"
+                              : pendingApplicants > 0 && !assignedStaff
+                              ? `${pendingApplicants} cleaner(s) applied via Open Shifts Marketplace — click to review & assign`
+                              : "Assign a cleaner to this job"
+                          }
+                        >
+                          <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">
+                            {b.payment_status !== "paid"
+                              ? "Awaiting payment"
+                              : assignedStaff
+                              ? `${assignedStaff.first_name} ${assignedStaff.last_name}`
+                              : pendingApplicants > 0
+                              ? `Assign (${pendingApplicants} applied)`
+                              : "Assign staff"}
+                          </span>
+                        </button>
+                      );
+                    })()}
                   </div>
 
                   {/* Actions & Expand Details */}

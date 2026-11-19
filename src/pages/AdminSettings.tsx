@@ -18,6 +18,9 @@ import {
   Calendar,
   ToggleLeft,
   ToggleRight,
+  Building2,
+  Receipt,
+  Users,
 } from "lucide-react";
 import {
   START_HOURS,
@@ -42,6 +45,12 @@ type FormValues = {
   email_payment: string;
   email_payroll: string;
   email_staffing: string;
+  company_legal_name: string;
+  company_reg_number: string;
+  company_registered_address: string;
+  vat_registered: string;
+  vat_number: string;
+  max_bookings_per_slot: string;
 };
 
 const FIELDS: {
@@ -49,7 +58,7 @@ const FIELDS: {
   label: string;
   sub: string;
   icon: React.ComponentType<{ className?: string }>;
-  type?: string;
+  type?: "text" | "boolean" | "number";
 }[] = [
   {
     key: "business_phone",
@@ -98,6 +107,44 @@ const FIELDS: {
     label: "Staffing email",
     sub: "Used in staff shift assignment emails",
     icon: Mail,
+  },
+  {
+    key: "company_legal_name",
+    label: "Legal company name",
+    sub: "Shown in footer, invoices, Terms & Privacy Policy (UK Companies Act requirement)",
+    icon: Building2,
+  },
+  {
+    key: "company_reg_number",
+    label: "Companies House registration number",
+    sub: "8-character UK company number (e.g. 12345678). Required on footer and invoices for UK Ltd companies",
+    icon: Building2,
+  },
+  {
+    key: "company_registered_address",
+    label: "Registered office address",
+    sub: "Official UK registered office address shown on invoices and legal footer",
+    icon: Building2,
+  },
+  {
+    key: "vat_registered",
+    label: "UK VAT registered",
+    sub: "Set to 'true' ONLY once registered for UK VAT (switches invoices to show 20% VAT breakdown)",
+    icon: Receipt,
+    type: "boolean",
+  },
+  {
+    key: "vat_number",
+    label: "UK VAT registration number",
+    sub: "e.g. GB123456789 (shown on VAT invoices when VAT registered is enabled)",
+    icon: Receipt,
+  },
+  {
+    key: "max_bookings_per_slot",
+    label: "Max bookings per time slot",
+    sub: "Capacity limit per date + start hour to prevent overbooking (default: 10)",
+    icon: Users,
+    type: "number",
   },
 ];
 
@@ -1479,9 +1526,9 @@ export default function AdminSettings() {
     setSaving(true);
     setError("");
     setSuccess(false);
-    const rows = (Object.keys(values) as (keyof FormValues)[]).map((key) => ({
-      key,
-      value: values[key].trim() || SETTING_DEFAULTS[key],
+    const rows = FIELDS.map((f) => ({
+      key: f.key,
+      value: String(values[f.key] ?? "").trim(),
       updated_at: new Date().toISOString(),
     }));
     const { error: err } = await supabase
@@ -1512,24 +1559,21 @@ export default function AdminSettings() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-newsletter`,
+      const { data: json, error: fnErr } = await supabase.functions.invoke(
+        "send-newsletter",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
+          body: {
             subject: newsletterSubject.trim(),
             bodyText: newsletterBody.trim(),
-          }),
+          },
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
         }
       );
 
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error ?? "Failed to send newsletter");
+      if (fnErr || !json?.ok) {
+        throw new Error(json?.error ?? fnErr?.message ?? "Failed to send newsletter");
       }
 
       setNewsletterSuccess(true);
@@ -1572,6 +1616,19 @@ export default function AdminSettings() {
         "email_payment",
         "email_payroll",
         "email_staffing",
+      ] as (keyof FormValues)[],
+    },
+    {
+      title: "UK Legal Entity, VAT & Booking Capacity",
+      subtitle:
+        "Displayed on customer invoices, website footer, and legal pages (Companies Act 2006 / HMRC VAT compliance).",
+      keys: [
+        "company_legal_name",
+        "company_reg_number",
+        "company_registered_address",
+        "vat_registered",
+        "vat_number",
+        "max_bookings_per_slot",
       ] as (keyof FormValues)[],
     },
   ];
@@ -1650,15 +1707,29 @@ export default function AdminSettings() {
                         <p className="text-[11px] text-gray-400 mb-2">
                           {field.sub}
                         </p>
-                        <input
-                          type="text"
-                          value={values[key]}
-                          onChange={(e) =>
-                            setValues((v) => ({ ...v, [key]: e.target.value }))
-                          }
-                          placeholder={SETTING_DEFAULTS[key]}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-                        />
+                        {field.type === "boolean" ? (
+                          <select
+                            value={values[key] === "true" ? "true" : "false"}
+                            onChange={(e) =>
+                              setValues((v) => ({ ...v, [key]: e.target.value }))
+                            }
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          >
+                            <option value="false">No (Not VAT registered — £0.00 VAT)</option>
+                            <option value="true">Yes (VAT registered — 20% UK VAT)</option>
+                          </select>
+                        ) : (
+                          <input
+                            type={field.type === "number" ? "number" : "text"}
+                            min={field.type === "number" ? "1" : undefined}
+                            value={values[key] ?? ""}
+                            onChange={(e) =>
+                              setValues((v) => ({ ...v, [key]: e.target.value }))
+                            }
+                            placeholder={SETTING_DEFAULTS[key] || ""}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        )}
                       </div>
                     </div>
                   );

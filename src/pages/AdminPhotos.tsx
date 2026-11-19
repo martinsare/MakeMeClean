@@ -10,6 +10,7 @@ interface BookingPhoto {
   booking_id: string;
   storage_path: string;
   uploaded_at: string;
+  signedUrl?: string;
   booking?: { service_name: string; date: string };
 }
 
@@ -32,12 +33,22 @@ export default function AdminPhotos() {
           booking:booking_id (service_name, date)
         `)
         .order("uploaded_at", { ascending: false })
-        .then(({ data }) => {
-          const photos = (data ?? []).map((p: any) => ({
+        .limit(100)
+        .then(async ({ data }) => {
+          const rows = (data ?? []).map((p: any) => ({
             ...p,
-            booking: Array.isArray(p.booking) ? p.booking[0] : p.booking
+            booking: Array.isArray(p.booking) ? p.booking[0] : p.booking,
           }));
-          setPhotos(photos as BookingPhoto[]);
+          const withSignedUrls = await Promise.all(
+            rows.map(async (p: BookingPhoto) => {
+              if (!p.storage_path) return p;
+              const { data: signed } = await supabase.storage
+                .from("booking-photos")
+                .createSignedUrl(p.storage_path, 3600);
+              return { ...p, signedUrl: signed?.signedUrl ?? "" };
+            })
+          );
+          setPhotos(withSignedUrls);
           setFetching(false);
         });
     }
@@ -46,15 +57,10 @@ export default function AdminPhotos() {
   if (loading || roleLoading) return null;
   if (!user || !isAdmin) return <div className="min-h-screen flex items-center justify-center text-gray-500">Access denied</div>;
 
-  const getPhotoUrl = (path: string) => {
-    const { data } = supabase.storage.from("booking-photos").getPublicUrl(path);
-    return data.publicUrl;
-  };
-
   return (
     <AdminLayout
       title="Booking Photos"
-      subtitle="Gallery of customer-uploaded booking photos"
+      subtitle="Gallery of customer-uploaded booking photos (private signed links)"
     >
       {fetching ? (
         <div className="flex items-center justify-center py-20">
@@ -70,23 +76,27 @@ export default function AdminPhotos() {
           {photos.map((photo) => (
             <div key={photo.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
               <img
-                src={getPhotoUrl(photo.storage_path)}
+                src={photo.signedUrl || ""}
                 alt="Booking"
-                className="w-full h-48 object-cover"
+                className="w-full h-48 object-cover bg-gray-100"
               />
               <div className="p-4">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   {photo.booking?.service_name}
                 </p>
                 <p className="text-sm text-gray-600 mt-1">{photo.booking?.date}</p>
-                <a
-                  href={getPhotoUrl(photo.storage_path)}
-                  download
-                  className="inline-flex items-center gap-2 mt-3 text-xs font-semibold text-green-600 hover:text-green-700"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download
-                </a>
+                {photo.signedUrl && (
+                  <a
+                    href={photo.signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    className="inline-flex items-center gap-2 mt-3 text-xs font-semibold text-green-600 hover:text-green-700"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download
+                  </a>
+                )}
               </div>
             </div>
           ))}

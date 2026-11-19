@@ -39,11 +39,16 @@ export async function verifyOtp(
   email: string,
   otp: string,
   purpose: "registration" | "careers" | "password_reset"
-): Promise<{ ok: boolean; verified: boolean; error?: string; reason?: string }> {
+): Promise<{ ok: boolean; verified: boolean; error?: string; reason?: string; resetToken?: string }> {
   const { data, error } = await supabase.functions.invoke("verify-otp", {
     body: { email, otp, purpose },
   });
   if (error) return { ok: false, verified: false, error: await readFunctionError(error) };
   if (!data?.ok) return { ok: false, verified: false, error: data?.error };
-  return { ok: true, verified: Boolean(data.verified), reason: data.reason };
+  return {
+    ok: true,
+    verified: Boolean(data.verified),
+    reason: data.reason,
+    resetToken: typeof data.resetToken === "string" ? data.resetToken : undefined,
+  };
 }

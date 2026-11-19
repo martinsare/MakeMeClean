@@ -92,8 +92,7 @@ export function verifyPostcodeCoverage(rawPostcode: string): PostcodeCoverageRes
       city: info.city,
       region: info.region,
       prefix: matchedPrefix,
-      cleanersCount: info.cleanersCount,
-      message: `Great news! We have ${info.cleanersCount} vetted cleaners active in ${info.city} (${info.region}).`,
+      message: `Great news! We cover ${info.city} (${info.region}) with our vetted cleaning team.`,
     };
   }
 
@@ -105,10 +104,9 @@ export function verifyPostcodeCoverage(rawPostcode: string): PostcodeCoverageRes
     return {
       covered: true,
       city: defaultCity,
-      region: "South Wales",
+      region: "Wales",
       prefix: generalPrefixMatch[0],
-      cleanersCount: 4,
-      message: `Service available! Vetted cleaners operate in this area.`,
+      message: `Great news! We operate across this Welsh postcode area.`,
     };
   }
 

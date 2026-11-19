@@ -1,16 +1,19 @@
-// UK 2024/25 payroll tax rates and thresholds
-// These are statutory UK tax rates and cannot be changed — they are not business config
+// UK 2026/27 statutory payroll tax rates and thresholds (HMRC)
+// Note: These are estimates for internal payroll prep — submit RTI FPS/EPS via HMRC-recognised payroll software.
+export const UK_TAX_YEAR = "2026/27";
+export const UK_NLW_2026 = 12.71;          // UK National Living Wage (age 21+) from April 2026
+
 const ANNUAL_PERSONAL_ALLOWANCE = 12570;   // Standard tax-free allowance
 const BASIC_RATE_BAND            = 37700;   // Band for 20% tax rate
 const UPPER_EARNINGS_LIMIT       = 50270;   // Annual threshold for different NI rates
 const PRIMARY_THRESHOLD          = 12570;   // Employee NI threshold (annual)
-const SECONDARY_THRESHOLD        =  9100;   // Employer NI threshold (annual)
+const SECONDARY_THRESHOLD        =  5000;   // Employer NI threshold (annual, £5,000 from April 2025+)
 
 const BASIC_RATE         = 0.20;   // 20% income tax rate
 const HIGHER_RATE        = 0.40;   // 40% income tax rate
 const NI_EMPLOYEE_MAIN   = 0.08;   // 8% employee NI (main band)
 const NI_EMPLOYEE_UPPER  = 0.02;   // 2% employee NI (upper band)
-const NI_EMPLOYER_RATE   = 0.138;  // 13.8% employer NI rate
+const NI_EMPLOYER_RATE   = 0.15;   // 15% employer NI rate (from April 2025+)
 
 export interface PayslipCalc {
   grossPay:         number;
